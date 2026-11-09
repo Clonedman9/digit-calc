@@ -99,6 +99,12 @@
 
 输入框 `readonly` + `inputmode="none"`，不弹系统键盘；桌面端物理键盘照常可用（数字键 / `Backspace` / `Enter` / `Esc`）。
 
+**平板/手机连点不缩放**：像 `11 × 10` 这种要连按两次 `1` 的题，双击曾被浏览器判定为「双击缩放」。现已处理：
+
+- `touch-action: manipulation`（输入框/键盘/按钮/页面）——保留单指滚动，禁用双击与双指手势缩放
+- `viewport` 加 `maximum-scale=1, user-scalable=no`
+- 按键改用 `pointerdown` 录入（无 300ms 点击延迟），并对浏览器补发的配对 `click` 计数去重，长按后松开也不会重复录入
+
 ## 功能清单
 
 - ✅ A / B 位数独立滑杆（1 ~ 6 位）

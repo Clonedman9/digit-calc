@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>口算练习 · Math Drill</title>
 <meta name="description" content="自定义算子与 A/B 位数、内置数字键盘的口算练习：自动出算式，即时判分，统计正确率与速度。">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✎</text></svg>">
@@ -22,6 +22,12 @@
     --shadow:0 30px 70px -40px rgba(30,45,80,.55);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{
+    touch-action:manipulation;          /* 禁双击缩放，保留单指滚动 */
+    -webkit-text-size-adjust:100%;
+    -ms-touch-action:manipulation;
+    overscroll-behavior:none;
+  }
   body{
     margin:0; min-height:100vh; color:var(--text); padding:24px 16px 40px;
     font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif;
@@ -99,6 +105,7 @@
 
   .btn{
     width:100%;padding:14px 18px;border-radius:16px;font-size:15px;font-weight:600;cursor:pointer;
+    touch-action:manipulation;
     border:1px solid var(--line-strong);background:var(--card);color:var(--text);
     transition:.18s;font-family:inherit;
   }
@@ -166,9 +173,10 @@
 
 
   /* ---------- 内置键盘 ---------- */
-  .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:12px}
+  .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:12px;touch-action:manipulation}
   .key{
     padding:15px 0;border-radius:15px;cursor:pointer;user-select:none;
+    touch-action:manipulation;-webkit-user-select:none;-webkit-touch-callout:none;
     font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
     font-size:22px;font-weight:600;color:var(--text);
     border:1px solid var(--line-strong);background:var(--card);
@@ -1048,15 +1056,41 @@
   });
 
   /* ---------------- 内置键盘 ---------------- */
-  els.keypad.addEventListener("click", function(e){
-    var key = e.target.closest(".key");
-    if(!key || S.locked) return;
+  var pendingClicks = 0, suppressTimer = null;
+
+  function pressKey(key){
+    if(!key || S.locked) return false;
     var k = key.getAttribute("data-k");
     var v = els.answer.value;
     if(k === "back"){ els.answer.value = v.slice(0, -1); }
     else if(k === "clear"){ els.answer.value = ""; }
     else if(v.length < 24){ els.answer.value = v + k; }
+    return true;
+  }
+
+  // 按下即录入：连点同一个数字也立刻响应，且不会触发双击缩放
+  els.keypad.addEventListener("pointerdown", function(e){
+    var key = e.target && e.target.closest ? e.target.closest(".key") : null;
+    if(!key) return;
+    e.preventDefault();          // 阻止默认手势（双击缩放 / 长按选择）
+    pressKey(key);
+    pendingClicks++;             // 这次按压对应的 click 稍后要忽略
+    clearTimeout(suppressTimer);
+    suppressTimer = setTimeout(function(){ pendingClicks = 0; }, 1200);
   });
+
+  // 兼容：键盘（Tab + 回车/空格）与不支持 pointer 事件的旧浏览器
+  els.keypad.addEventListener("click", function(e){
+    if(pendingClicks > 0){       // 已由同一次按压录入，忽略配对 click
+      pendingClicks--;
+      return;
+    }
+    pressKey(e.target && e.target.closest ? e.target.closest(".key") : null);
+  });
+
+  // ---- iOS Safari：双指/双击手势缩放直接拦掉 ----
+  els.keypad.addEventListener("dblclick", function(e){ e.preventDefault(); });
+  document.addEventListener("gesturestart", function(e){ e.preventDefault(); }, { passive: false });
 
   els.startBtn.addEventListener("click", function(){ startRun(null); });
   els.openSettings.addEventListener("click", function(){ show("setup"); });
