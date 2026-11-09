@@ -870,6 +870,15 @@
   }
 
   /* ---------------- 作答回顾 ---------------- */
+  function setReviewMode(mode, silent){
+    S.reviewMode = mode;
+    var btns = els.reviewSeg.querySelectorAll("button");
+    for(var i = 0; i < btns.length; i++){
+      btns[i].classList.toggle("on", btns[i].getAttribute("data-v") === mode);
+    }
+    if(!silent) renderReview();
+  }
+
   function renderReview(){
     var mode = S.reviewMode || "all";
     var rows = (S.log || []).filter(function(x){ return mode === "all" || !x.ok; });
@@ -915,6 +924,7 @@
 
     if(S.log.length){
       els.wrongCard.style.display = "";
+      setReviewMode(S.wrong.length ? "wrong" : "all", true);   // 默认只看错题
       renderReview();
       els.retryWrongBtn.style.display = S.wrong.length ? "" : "none";
     } else {
@@ -1059,11 +1069,7 @@
   els.reviewSeg.addEventListener("click", function(e){
     var b = e.target.closest("button[data-v]");
     if(!b) return;
-    var btns = els.reviewSeg.querySelectorAll("button");
-    for(var i = 0; i < btns.length; i++) btns[i].classList.remove("on");
-    b.classList.add("on");
-    S.reviewMode = b.getAttribute("data-v");
-    renderReview();
+    setReviewMode(b.getAttribute("data-v"));
   });
 
   els.backBtn.addEventListener("click", function(){ show("home"); });
