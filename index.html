@@ -148,8 +148,6 @@
     box-shadow:var(--shadow);transition:border-color .2s,box-shadow .2s;
   }
   html[data-theme="light"] .qcard{background:linear-gradient(160deg,#f8faff,#fff)}
-  .qcard.good{border-color:rgba(52,211,153,.65);box-shadow:0 0 0 3px rgba(52,211,153,.16),var(--shadow)}
-  .qcard.bad{border-color:rgba(251,113,133,.65);box-shadow:0 0 0 3px rgba(251,113,133,.16),var(--shadow)}
   .q-expr{
     font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
     font-size:34px;font-weight:600;letter-spacing:.5px;line-height:1.2;
@@ -166,10 +164,6 @@
   #answer::placeholder{color:var(--muted);opacity:.45;font-weight:400;letter-spacing:0}
   #answer.caret::after{content:""}
 
-  .feedback{min-height:24px;margin-top:10px;font-size:14.5px;font-weight:600;transition:.2s}
-  .feedback.good{color:var(--ok)}
-  .feedback.bad{color:var(--bad)}
-  .feedback small{display:block;font-size:12.5px;font-weight:400;color:var(--muted);margin-top:4px}
 
   /* ---------- 内置键盘 ---------- */
   .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:12px}
@@ -235,14 +229,26 @@
   .kpi span{display:block;font-size:11px;color:var(--muted);margin-bottom:5px}
   .kpi b{font-size:18px;font-variant-numeric:tabular-nums}
 
-  .wrong-item{
-    display:flex;justify-content:space-between;align-items:center;gap:12px;
-    padding:11px 2px;border-bottom:1px dashed var(--line);font-size:13.5px;
-    font-family:ui-monospace,Menlo,Consolas,monospace;
+  .review-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .seg.mini{display:inline-grid;grid-auto-flow:column;gap:6px}
+  .seg.mini button{padding:6px 11px;border-radius:9px;font-size:11.5px}
+  .review-list{max-height:320px;overflow-y:auto}
+  .review-row{
+    display:grid;grid-template-columns:1fr 92px 92px;gap:8px;align-items:center;
+    padding:9px 2px;border-bottom:1px dashed var(--line);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;
   }
-  .wrong-item:last-child{border-bottom:0}
-  .wrong-item .ai{color:var(--bad);text-decoration:line-through;opacity:.8}
-  .wrong-item .co{color:var(--ok);font-weight:600}
+  .review-row:last-child{border-bottom:0}
+  .review-row.head{
+    font-family:inherit;font-size:10.5px;letter-spacing:1px;color:var(--muted);
+    border-bottom:1px solid var(--line);padding-bottom:7px;
+  }
+  .r-expr{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+  .r-user{text-align:right}
+  .r-user.ok{color:var(--ok)}
+  .r-user.bad{color:var(--bad)}
+  .r-ans{text-align:right;color:var(--ok);font-weight:600}
+  .btn.tiny{width:auto;padding:6px 12px;font-size:12px;border-radius:10px;border-color:var(--line-strong)}
 
   footer{text-align:center;font-size:11px;color:var(--muted);margin-top:20px;line-height:1.8}
   footer a{color:var(--muted);text-decoration:none;border-bottom:1px dotted var(--line-strong)}
@@ -389,7 +395,7 @@
     <div class="topbar">
       <span>第 <b id="progressText">1</b> 题</span>
       <span class="mid" id="timerText">0.0s</span>
-      <span>连击 <b id="streakText">0</b></span>
+      <button class="btn tiny ghost" id="quitBtn">结束</button>
     </div>
     <div class="progress"><i id="progressBar"></i></div>
 
@@ -397,7 +403,6 @@
       <div class="q-expr" id="qExpr">—</div>
       <input id="answer" type="text" inputmode="none" autocomplete="off" spellcheck="false"
              maxlength="24" placeholder="输入答案" readonly>
-      <div class="feedback" id="feedback"></div>
     </div>
 
     <div class="keypad" id="keypad">
@@ -419,13 +424,6 @@
       <button class="btn" id="skipBtn">跳过</button>
       <button class="btn primary" id="submitBtn">提交</button>
     </div>
-
-    <div class="statline">
-      <span class="g">正确 <b id="okCount">0</b></span>
-      <span class="r">错误 <b id="badCount">0</b></span>
-      <span>正确率 <b id="accText">—</b></span>
-      <button class="btn ghost" id="quitBtn" style="width:auto;padding:0;border:0;font-size:12.5px;color:var(--muted)">结束</button>
-    </div>
   </section>
 
   <!-- ============ 结算 ============ -->
@@ -442,8 +440,14 @@
     </div>
 
     <div class="card" id="wrongCard">
-      <div class="label">错题回顾</div>
-      <div id="wrongList"></div>
+      <div class="review-head">
+        <div class="label" style="margin:0">作答回顾</div>
+        <div class="seg mini" id="reviewSeg">
+          <button data-v="all" class="on">全部</button>
+          <button data-v="wrong">只看错题</button>
+        </div>
+      </div>
+      <div id="reviewList" class="review-list"></div>
     </div>
 
     <div class="actions">
@@ -525,14 +529,14 @@
     totalSeg: $("totalSeg"), totalVal: $("totalVal"),
     limitSeg: $("limitSeg"), limitVal: $("limitVal"),
     startBtn: $("startBtn"), hint: $("hintText"),
-    progressText: $("progressText"), timerText: $("timerText"), streakText: $("streakText"),
+    progressText: $("progressText"), timerText: $("timerText"),
     progressBar: $("progressBar"), qcard: $("qcard"), qExpr: $("qExpr"),
-    answer: $("answer"), feedback: $("feedback"), keypad: $("keypad"),
+    answer: $("answer"), keypad: $("keypad"),
     skipBtn: $("skipBtn"), submitBtn: $("submitBtn"), quitBtn: $("quitBtn"),
-    okCount: $("okCount"), badCount: $("badCount"), accText: $("accText"),
+    reviewSeg: $("reviewSeg"), reviewList: $("reviewList"),
     scoreBig: $("scoreBig"), scoreSub: $("scoreSub"),
     kpiAvg: $("kpiAvg"), kpiStreak: $("kpiStreak"), kpiFast: $("kpiFast"), kpiTotal: $("kpiTotal"),
-    wrongCard: $("wrongCard"), wrongList: $("wrongList"),
+    wrongCard: $("wrongCard"),
     retryWrongBtn: $("retryWrongBtn"), againBtn: $("againBtn"), backBtn: $("backBtn"),
     stats: $("statsView"), statsBtn: $("openStats"),
     carrySeg: $("carrySeg"), carryVal: $("carryVal"),
@@ -562,7 +566,8 @@
     stRange: "all",    // 统计范围 all / 7 / 1
     records: [],       // 每题的作答记录，用于数据分析
     i: 0, ok: 0, bad: 0, streak: 0, maxStreak: 0,
-    times: [], wrong: [], queue: null,
+    times: [], wrong: [], log: [], queue: null,
+    reviewMode: "all",
     cur: null, locked: true, qid: 0, t0: 0, tick: null, startAt: 0
   };
 
@@ -744,20 +749,13 @@
     S.i = 0; S.ok = 0; S.bad = 0; S.streak = 0; S.maxStreak = 0;
     S.times = []; S.wrong = []; S.queue = queue || null;
     S.startAt = Date.now();
-    updateStats();
+    S.log = [];
+    S.reviewMode = "all";
     show("drill");
     nextQuestion();
   }
 
   function currentTotal(){ return S.queue ? S.queue.length : S.total; }
-
-  function updateStats(){
-    els.okCount.textContent = S.ok;
-    els.badCount.textContent = S.bad;
-    var done = S.ok + S.bad;
-    els.accText.textContent = done ? Math.round(S.ok / done * 100) + "%" : "—";
-    els.streakText.textContent = S.streak;
-  }
 
   function updateProgress(){
     var total = currentTotal();
@@ -778,8 +776,6 @@
     els.qcard.classList.remove("good", "bad");
     els.qExpr.classList.remove("hidden");
     els.qExpr.textContent = exprText(q);
-    els.feedback.textContent = "";
-    els.feedback.className = "feedback";
     els.answer.value = "";
     updateProgress();
     startTimer();
@@ -823,11 +819,7 @@
     if(S.locked) return;
     var raw = els.answer.value.trim().replace(/[,\s]/g, "");
     if(raw === ""){ return; }
-    if(!/^\d+$/.test(raw)){
-      els.feedback.className = "feedback bad";
-      els.feedback.textContent = "请输入数字";
-      return;
-    }
+    if(!/^\d+$/.test(raw)){ return; }
     var val;
     try{ val = BigInt(raw); }catch(e){ return; }
     resolve(val === S.cur.ans, raw, false);
@@ -837,33 +829,32 @@
     if(S.locked) return;
     S.locked = true;
     stopTimer();
+    clearTimeout(S.hideTimer);
 
     var used = (performance.now() - S.t0) / 1000;
     S.times.push(used);
-
     var q = S.cur;
 
-    clearTimeout(S.hideTimer);
-    els.qExpr.classList.remove("hidden");
-    els.qExpr.textContent = exprText(q);   // 提交后重新显示，方便对照
+    // 只记录，不反馈；最后在结算页统一公布
+    S.log.push({
+      expr: exprText(q),
+      ans: q.ans.toString(),
+      user: userRaw == null ? null : String(userRaw),
+      ok: correct,
+      timeout: !!timeout,
+      skipped: userRaw === null && !timeout
+    });
 
     if(correct){
       S.ok++; S.streak++;
       if(S.streak > S.maxStreak) S.maxStreak = S.streak;
-      els.qcard.classList.add("good");
-      els.feedback.className = "feedback good";
-      els.feedback.textContent = "✔ 正确　" + used.toFixed(1) + "s";
     } else {
       S.bad++; S.streak = 0;
-      S.wrong.push({ expr: exprText(q), ans: q.ans.toString(), user: timeout ? "超时" : (userRaw === null ? "跳过" : userRaw) });
-      els.qcard.classList.add("bad");
-      els.feedback.className = "feedback bad";
-      els.feedback.innerHTML = (timeout ? "⏱ 超时" : (userRaw === null ? "— 已跳过" : "✘ 答错了"))
-        + '<small>正确答案：' + q.ans.toString() + "</small>";
+      S.wrong.push({ expr: exprText(q), ans: q.ans.toString(),
+                     user: timeout ? "超时" : (userRaw === null ? "跳过" : userRaw) });
     }
-    updateStats();
 
-    // 记录本题，用于数据分析
+    // 数据分析用的记录
     S.records.push({
       t: Date.now(), op: q.op,
       la: q.a.toString().length, lb: q.b.toString().length,
@@ -873,13 +864,30 @@
     if(S.records.length > 2000) S.records.splice(0, S.records.length - 2000);
     saveRecords();
 
-    var wait = correct ? 620 : 1500;
-    var qid = S.qid;
-    setTimeout(function(){
-      if(qid !== S.qid) return;
-      S.i++;
-      nextQuestion();
-    }, wait);
+    // 不显示对错，立刻进入下一题
+    S.i++;
+    nextQuestion();
+  }
+
+  /* ---------------- 作答回顾 ---------------- */
+  function renderReview(){
+    var mode = S.reviewMode || "all";
+    var rows = (S.log || []).filter(function(x){ return mode === "all" || !x.ok; });
+    if(!rows.length){
+      els.reviewList.innerHTML = '<div class="empty-stat">没有记录</div>';
+      return;
+    }
+    var html = '<div class="review-row head"><span>题目</span><span>你的答案</span><span>正确答案</span></div>';
+    for(var i = 0; i < rows.length; i++){
+      var x = rows[i];
+      var user = x.timeout ? "超时" : (x.skipped ? "跳过" : x.user);
+      html += '<div class="review-row">'
+            + '<span class="r-expr">' + x.expr + "</span>"
+            + '<span class="r-user ' + (x.ok ? "ok" : "bad") + '">' + user + "</span>"
+            + '<span class="r-ans">' + x.ans + "</span>"
+            + "</div>";
+    }
+    els.reviewList.innerHTML = html;
   }
 
   /* ---------------- 结算 ---------------- */
@@ -905,16 +913,10 @@
     els.kpiFast.textContent = fmtTime(fast);
     els.kpiTotal.textContent = fmtTime(totalSec);
 
-    if(S.wrong.length){
+    if(S.log.length){
       els.wrongCard.style.display = "";
-      var html = "";
-      for(var i = 0; i < S.wrong.length; i++){
-        var w = S.wrong[i];
-        html += '<div class="wrong-item"><span>' + w.expr + "</span>"
-              + '<span><span class="ai">' + w.user + "</span> → <span class=\"co\">" + w.ans + "</span></span></div>";
-      }
-      els.wrongList.innerHTML = html;
-      els.retryWrongBtn.style.display = "";
+      renderReview();
+      els.retryWrongBtn.style.display = S.wrong.length ? "" : "none";
     } else {
       els.wrongCard.style.display = "none";
       els.retryWrongBtn.style.display = "none";
@@ -1054,6 +1056,16 @@
   els.skipBtn.addEventListener("click", function(){ if(!S.locked) resolve(false, null, false); });
   els.quitBtn.addEventListener("click", finish);
   els.againBtn.addEventListener("click", function(){ startRun(null); });
+  els.reviewSeg.addEventListener("click", function(e){
+    var b = e.target.closest("button[data-v]");
+    if(!b) return;
+    var btns = els.reviewSeg.querySelectorAll("button");
+    for(var i = 0; i < btns.length; i++) btns[i].classList.remove("on");
+    b.classList.add("on");
+    S.reviewMode = b.getAttribute("data-v");
+    renderReview();
+  });
+
   els.backBtn.addEventListener("click", function(){ show("home"); });
 
   els.retryWrongBtn.addEventListener("click", function(){
