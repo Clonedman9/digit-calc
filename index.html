@@ -144,6 +144,7 @@
   /* ---------- 练习中 ---------- */
   .topbar{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:var(--muted);margin-bottom:9px}
   .topbar b{color:var(--text);font-variant-numeric:tabular-nums}
+  .topbar em{font-style:normal;font-size:11px;color:var(--muted);margin-left:6px}
   .topbar .mid{font-variant-numeric:tabular-nums;font-family:ui-monospace,Menlo,Consolas,monospace}
   .progress{height:5px;border-radius:999px;background:var(--line);overflow:hidden;margin-bottom:14px}
   .progress i{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .35s ease}
@@ -221,6 +222,18 @@
   .custom input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(124,108,255,.14)}
   .custom span{font-size:12px;color:var(--muted);flex:0 0 auto}
   .custom input::-webkit-outer-spin-button,.custom input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  .switch{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted);cursor:pointer;user-select:none}
+  .switch input{
+    appearance:none;-webkit-appearance:none;width:38px;height:22px;border-radius:999px;
+    background:var(--line-strong);position:relative;cursor:pointer;transition:.2s;flex:0 0 auto;margin:0;
+  }
+  .switch input::after{
+    content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;
+    background:#fff;transition:.2s;
+  }
+  .switch input:checked{background:var(--accent)}
+  .switch input:checked::after{transform:translateX(16px)}
+  .switch span{line-height:1.45}
   .custom input::placeholder{color:var(--muted);opacity:.6;font-size:12.5px}
 
   /* ---------- 结算 ---------- */
@@ -392,6 +405,10 @@
           <input id="showInput" type="number" inputmode="numeric" min="50" max="60000" step="100" placeholder="毫秒，如 1500">
           <span>ms</span>
         </div>
+        <label class="switch" style="margin-top:12px">
+          <input type="checkbox" id="adaptShow">
+          <span>自适应：答对缩短、答错延长</span>
+        </label>
       </div>
     </div>
 
@@ -401,7 +418,7 @@
   <!-- ============ 练习 ============ -->
   <section class="view" id="drillView">
     <div class="topbar">
-      <span>第 <b id="progressText">1</b> 题</span>
+      <span>第 <b id="progressText">1</b> 题<em id="showHint"></em></span>
       <span class="mid" id="timerText">0.0s</span>
       <button class="btn tiny ghost" id="quitBtn">结束</button>
     </div>
@@ -549,7 +566,8 @@
     stats: $("statsView"), statsBtn: $("openStats"),
     carrySeg: $("carrySeg"), carryVal: $("carryVal"),
     showSeg: $("showSeg"), showVal: $("showVal"),
-    showCustom: $("showCustom"), showInput: $("showInput"),
+    showCustom: $("showCustom"), showInput: $("showInput"), adaptShow: $("adaptShow"),
+    showHint: $("showHint"),
     totalCustom: $("totalCustom"), totalInput: $("totalInput"),
     limitCustom: $("limitCustom"), limitInput: $("limitInput"),
     stRange: $("stRange"),
@@ -570,6 +588,8 @@
     limit: 0,
     carry: 0,          // 0 不限 / 1 必须进位借位 / 2 禁止进位借位
     showMs: 0,         // 算式显示多久后隐藏（毫秒），0 = 不隐藏
+    adaptShow: false,  // 自适应：答对缩短、答错延长
+    curShow: 0,        // 本轮当前的显示时长
     hideTimer: null,
     stRange: "all",    // 统计范围 all / 7 / 1
     records: [],       // 每题的作答记录，用于数据分析
@@ -759,6 +779,7 @@
     S.startAt = Date.now();
     S.log = [];
     S.reviewMode = "all";
+    S.curShow = S.showMs;
     show("drill");
     nextQuestion();
   }
@@ -812,15 +833,23 @@
   function stopTimer(){ if(S.tick){ clearInterval(S.tick); S.tick = null; } }
 
   // 显示时长到了就把算式藏起来，逼着先记住再算
+  function effectiveShow(){
+    if(!S.showMs) return 0;
+    if(S.adaptShow && S.curShow > 0) return S.curShow;
+    return S.showMs;
+  }
+
   function scheduleHide(){
     clearTimeout(S.hideTimer);
-    if(!S.showMs) return;
+    var ms = effectiveShow();
+    els.showHint.textContent = ms ? " · " + ms + "ms" : "";
+    if(!ms) return;
     var qid = S.qid;
     S.hideTimer = setTimeout(function(){
       if(qid !== S.qid || S.locked) return;
       els.qExpr.textContent = "？ ？ ？";
       els.qExpr.classList.add("hidden");
-    }, S.showMs);
+    }, ms);
   }
 
   function submit(){
@@ -871,6 +900,14 @@
     });
     if(S.records.length > 2000) S.records.splice(0, S.records.length - 2000);
     saveRecords();
+
+    // 自适应：答对缩短、答错延长（只影响下一题）
+    if(S.adaptShow && S.showMs > 0){
+      var cap = Math.min(10000, Math.max(S.showMs * 2, 3000));
+      var nx = correct ? S.curShow * 0.8 : S.curShow * 1.3;
+      nx = Math.round(nx / 10) * 10;
+      S.curShow = Math.max(200, Math.min(cap, nx));
+    }
 
     // 不显示对错，立刻进入下一题
     S.i++;
@@ -959,7 +996,7 @@
     var bits = [];
     bits.push(S.total ? S.total + " 题" : "无限题");
     bits.push(S.limit ? S.limit + " 秒/题" : "不限时");
-    bits.push(S.showMs ? "显示 " + S.showMs + "ms" : "算式常显");
+    bits.push(S.showMs ? "显示 " + S.showMs + "ms" + (S.adaptShow ? "·自适应" : "") : "算式常显");
     if(S.carry === 1) bits.push("必须进位");
     if(S.carry === 2) bits.push("禁止进位");
     els.heroSub.textContent = "A " + S.da + " 位 / B " + S.db + " 位 · " + bits.join(" · ");
@@ -973,6 +1010,7 @@
     if(S.carry === 1) t += " · 每题必定进位/借位";
     if(S.carry === 2) t += " · 每题不含进位/借位";
     if(S.showMs) t += " · 算式 " + S.showMs + " ms 后隐藏";
+    if(S.showMs && S.adaptShow) t += "（答对缩短、答错延长）";
     els.hint.textContent = t;
     updateSummary();
   }
@@ -1344,6 +1382,10 @@
     if(v > 60000) v = 60000;
     S.showMs = Math.round(v);
     els.showVal.textContent = S.showMs ? S.showMs + " ms" : "不限";
+    if(!S.showMs && S.adaptShow && els.adaptShow){
+      S.adaptShow = false;
+      els.adaptShow.checked = false;
+    }
     updateHint();
   }
 
@@ -1363,6 +1405,23 @@
 
   els.showInput.addEventListener("input", function(){
     applyShow(parseInt(els.showInput.value, 10) || 0);
+  });
+
+  function setShowPreset(v){
+    var btns = els.showSeg.querySelectorAll("button");
+    for(var i = 0; i < btns.length; i++){
+      btns[i].classList.toggle("on", btns[i].getAttribute("data-v") === String(v));
+    }
+    els.showCustom.classList.remove("show");
+  }
+
+  els.adaptShow.addEventListener("change", function(){
+    S.adaptShow = els.adaptShow.checked;
+    if(S.adaptShow && !S.showMs){        // 没设显示时长时，自适应给个基准
+      setShowPreset(2000);
+      applyShow(2000);
+    }
+    updateHint();
   });
 
   els.stRange.addEventListener("click", function(e){
