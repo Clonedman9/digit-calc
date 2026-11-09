@@ -180,12 +180,15 @@
   .stat-row .fill{display:block;height:100%;border-radius:999px;
     background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .5s ease}
   .stat-row .fill.warn{background:linear-gradient(90deg,#fb7185,#fbbf24)}
-  .stat-row .vl{width:96px;flex:0 0 auto;text-align:right;font-variant-numeric:tabular-nums;color:var(--text)}
+  .stat-row .vl{width:126px;flex:0 0 auto;text-align:right;font-variant-numeric:tabular-nums;color:var(--text);font-size:11.5px}
   .trend{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;align-items:end;height:104px;padding-top:6px}
   .trend .bar{display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;gap:5px}
   .trend .bar i{display:block;width:100%;max-width:24px;border-radius:6px 6px 0 0;
     background:linear-gradient(180deg,var(--accent-2),var(--accent));min-height:3px;transition:height .4s ease}
   .trend .bar span{font-size:10px;color:var(--muted);white-space:nowrap}
+  .stat-note{margin-top:10px;font-size:11.5px;color:var(--muted);line-height:1.6}
+  .q-expr.hidden{color:var(--muted);opacity:.55;letter-spacing:10px;font-weight:500}
+  .seg.five button{font-size:12px;padding:10px 2px}
 
   /* ---------- 结算 ---------- */
   .score{
@@ -292,6 +295,16 @@
           <button data-v="30">30 秒</button>
         </div>
       </div>
+      <div class="setting">
+        <div class="row"><span>算式显示时长（到时自动隐藏）</span><b id="showVal">不限</b></div>
+        <div class="seg five" id="showSeg">
+          <button data-v="0" class="on">不限</button>
+          <button data-v="1000">1 秒</button>
+          <button data-v="2000">2 秒</button>
+          <button data-v="3000">3 秒</button>
+          <button data-v="5000">5 秒</button>
+        </div>
+      </div>
     </div>
 
     <button class="btn primary big" id="startBtn">开始练习</button>
@@ -369,26 +382,52 @@
 
   <!-- ============ 数据分析 ============ -->
   <section class="view" id="statsView">
+    <div class="card" style="padding:14px 16px">
+      <div class="label" style="margin-bottom:8px">数据范围</div>
+      <div class="seg" id="stRange">
+        <button data-v="all" class="on">全部</button>
+        <button data-v="7">最近 7 天</button>
+        <button data-v="1">今天</button>
+      </div>
+    </div>
+
     <div class="score">
       <div class="big" id="stAcc">—</div>
       <div class="sub" id="stSub">还没有练习记录</div>
       <div class="grid2">
-        <div class="kpi"><span>累计题数</span><b id="stTotal">0</b></div>
+        <div class="kpi"><span>题数</span><b id="stTotal">0</b></div>
         <div class="kpi"><span>平均用时</span><b id="stAvg">—</b></div>
+        <div class="kpi"><span>总练习时长</span><b id="stDur">—</b></div>
         <div class="kpi"><span>练习天数</span><b id="stDays">0</b></div>
+        <div class="kpi"><span>最长连对</span><b id="stStreak">0</b></div>
         <div class="kpi"><span>错题数</span><b id="stWrong">0</b></div>
       </div>
     </div>
 
+    <div class="card">
+      <div class="label">最近 10 次练习 · 正确率</div>
+      <div class="trend" id="stSessions"></div>
+    </div>
+
     <div class="card"><div class="label">按算子</div><div id="stOps"></div></div>
+
     <div class="card"><div class="label">进位 / 借位 表现</div><div id="stCarry"></div></div>
+
+    <div class="card">
+      <div class="label">答题用时分布</div>
+      <div id="stTime"></div>
+      <div class="stat-note" id="stTimeNote"></div>
+    </div>
+
     <div class="card"><div class="label">按题目难度（A 位数 + B 位数）</div><div id="stLen"></div></div>
-    <div class="card"><div class="label">最近 7 天</div><div class="trend" id="stTrend"></div></div>
+
+    <div class="card"><div class="label">最近 7 天题量</div><div class="trend" id="stTrend"></div></div>
 
     <div class="actions">
+      <button class="btn" id="stExport">导出 CSV</button>
       <button class="btn" id="stClear">清空数据</button>
-      <button class="btn primary" id="stBack">返回练习</button>
     </div>
+    <button class="btn primary" id="stBack" style="margin-top:10px">返回练习</button>
   </section>
 
   <footer>
@@ -422,10 +461,14 @@
     retryWrongBtn: $("retryWrongBtn"), againBtn: $("againBtn"), backBtn: $("backBtn"),
     stats: $("statsView"), statsBtn: $("statsBtn"),
     carrySeg: $("carrySeg"), carryVal: $("carryVal"),
+    showSeg: $("showSeg"), showVal: $("showVal"),
+    stRange: $("stRange"),
     stAcc: $("stAcc"), stSub: $("stSub"), stTotal: $("stTotal"), stAvg: $("stAvg"),
-    stDays: $("stDays"), stWrong: $("stWrong"),
-    stOps: $("stOps"), stCarry: $("stCarry"), stLen: $("stLen"), stTrend: $("stTrend"),
-    stClear: $("stClear"), stBack: $("stBack"),
+    stDur: $("stDur"), stDays: $("stDays"), stStreak: $("stStreak"), stWrong: $("stWrong"),
+    stSessions: $("stSessions"), stOps: $("stOps"), stCarry: $("stCarry"),
+    stTime: $("stTime"), stTimeNote: $("stTimeNote"),
+    stLen: $("stLen"), stTrend: $("stTrend"),
+    stExport: $("stExport"), stClear: $("stClear"), stBack: $("stBack"),
     themeBtn: $("themeBtn"), toast: $("toast")
   };
 
@@ -436,6 +479,9 @@
     total: 10,
     limit: 0,
     carry: 0,          // 0 不限 / 1 必须进位借位 / 2 禁止进位借位
+    showMs: 0,         // 算式显示多久后隐藏（毫秒），0 = 不隐藏
+    hideTimer: null,
+    stRange: "all",    // 统计范围 all / 7 / 1
     records: [],       // 每题的作答记录，用于数据分析
     i: 0, ok: 0, bad: 0, streak: 0, maxStreak: 0,
     times: [], wrong: [], queue: null,
@@ -651,12 +697,14 @@
     S.cur = q;
 
     els.qcard.classList.remove("good", "bad");
+    els.qExpr.classList.remove("hidden");
     els.qExpr.textContent = exprText(q);
     els.feedback.textContent = "";
     els.feedback.className = "feedback";
     els.answer.value = "";
     updateProgress();
     startTimer();
+    scheduleHide();
   }
 
   function startTimer(){
@@ -679,6 +727,18 @@
   }
 
   function stopTimer(){ if(S.tick){ clearInterval(S.tick); S.tick = null; } }
+
+  // 显示时长到了就把算式藏起来，逼着先记住再算
+  function scheduleHide(){
+    clearTimeout(S.hideTimer);
+    if(!S.showMs) return;
+    var qid = S.qid;
+    S.hideTimer = setTimeout(function(){
+      if(qid !== S.qid || S.locked) return;
+      els.qExpr.textContent = "？ ？ ？";
+      els.qExpr.classList.add("hidden");
+    }, S.showMs);
+  }
 
   function submit(){
     if(S.locked) return;
@@ -703,6 +763,10 @@
     S.times.push(used);
 
     var q = S.cur;
+
+    clearTimeout(S.hideTimer);
+    els.qExpr.classList.remove("hidden");
+    els.qExpr.textContent = exprText(q);   // 提交后重新显示，方便对照
 
     if(correct){
       S.ok++; S.streak++;
@@ -797,6 +861,7 @@
     if(S.ops.indexOf("−") >= 0) t += " · 减法不出现负数";
     if(S.carry === 1) t += " · 每题必定进位/借位";
     if(S.carry === 2) t += " · 每题不含进位/借位";
+    if(S.showMs) t += " · 算式 " + (S.showMs / 1000) + " 秒后隐藏";
     els.hint.textContent = t;
   }
 
@@ -909,88 +974,174 @@
     return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
   }
 
-  function statRow(name, okN, total){
+  function fmtClock(ts){
+    var d = new Date(ts);
+    return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
+  }
+
+  function fmtDur(sec){
+    if(!sec) return "0s";
+    if(sec < 60) return Math.round(sec) + "s";
+    if(sec < 3600) return Math.floor(sec / 60) + "m" + Math.round(sec % 60) + "s";
+    return Math.floor(sec / 3600) + "h" + Math.round((sec % 3600) / 60) + "m";
+  }
+
+  function statRow(name, okN, total, avgSec){
     var pctv = total ? Math.round(okN / total * 100) : 0;
+    var right = total
+      ? pctv + "% · " + total + "题 · " + (avgSec != null ? avgSec.toFixed(1) + "s" : "—")
+      : "—";
     return '<div class="stat-row"><span class="nm">' + name + "</span>"
       + '<span class="track"><i class="fill' + (total && pctv < 60 ? " warn" : "") + '" style="width:'
       + (total ? Math.max(3, pctv) : 0) + '%"></i></span>'
-      + '<span class="vl">' + (total ? pctv + "% · " + total + "题" : "—") + "</span></div>";
+      + '<span class="vl">' + right + "</span></div>";
+  }
+
+  function distRow(name, cnt, total){
+    var pctv = total ? Math.round(cnt / total * 100) : 0;
+    return '<div class="stat-row"><span class="nm">' + name + "</span>"
+      + '<span class="track"><i class="fill" style="width:' + (total ? Math.max(3, pctv) : 0) + '%"></i></span>'
+      + '<span class="vl">' + cnt + " 题 · " + pctv + "%</span></div>";
+  }
+
+  function rangeStart(){
+    if(S.stRange === "1"){
+      var d = new Date(); d.setHours(0, 0, 0, 0);
+      return d.getTime();
+    }
+    if(S.stRange === "7") return Date.now() - 7 * 86400000;
+    return 0;
   }
 
   function renderStats(){
-    var R = S.records || [], n = R.length;
-    var okN = 0, secSum = 0, wrongN = 0, daysSet = {};
+    var from = rangeStart();
+    var R = (S.records || []).filter(function(r){ return r.t >= from; });
+    R.sort(function(x, y){ return x.t - y.t; });
+    var n = R.length;
+
+    var okN = 0, secSum = 0, wrongN = 0, daysSet = {}, bestStreak = 0, curStreak = 0;
+    var okSec = 0, okCnt = 0, badSec = 0, badCnt = 0;
     for(var i = 0; i < n; i++){
       var r = R[i];
-      if(r.ok) okN++;
-      else wrongN++;
+      if(r.ok){
+        okN++; okSec += r.sec || 0; okCnt++;
+        curStreak++; if(curStreak > bestStreak) bestStreak = curStreak;
+      } else {
+        wrongN++; badSec += r.sec || 0; badCnt++;
+        curStreak = 0;
+      }
       secSum += r.sec || 0;
       daysSet[dayKey(r.t)] = 1;
     }
 
     els.stAcc.textContent = n ? Math.round(okN / n * 100) + "%" : "—";
-    els.stSub.textContent = n ? "共 " + n + " 题 · 答对 " + okN + " 题" : "还没有练习记录，先去练几题吧";
+    els.stSub.textContent = n
+      ? "答对 " + okN + " / " + n + " 题" + (okN === n ? " · 全对！" : " · 错 " + wrongN + " 题")
+      : "该范围内还没有练习记录";
     els.stTotal.textContent = n;
     els.stAvg.textContent = n ? fmtTime(secSum / n) : "—";
+    els.stDur.textContent = n ? fmtDur(secSum) : "—";
     els.stDays.textContent = Object.keys(daysSet).length;
+    els.stStreak.textContent = bestStreak;
     els.stWrong.textContent = wrongN;
 
-    // 按算子
-    var ops = ["+", "−", "×", "÷"], html = "";
-    for(var k = 0; k < ops.length; k++){
-      var o = ops[k], tot = 0, good = 0;
-      for(var j = 0; j < n; j++){
-        if(R[j].op === o){ tot++; if(R[j].ok) good++; }
+    /* 最近 10 次练习（间隔 > 5 分钟算新的一次） */
+    var sessions = [], cur = null;
+    for(var i2 = 0; i2 < n; i2++){
+      if(!cur || R[i2].t - cur.end > 5 * 60000){
+        cur = { start: R[i2].t, end: R[i2].t, n: 0, ok: 0 };
+        sessions.push(cur);
       }
-      html += statRow(o, good, tot);
+      cur.end = R[i2].t; cur.n++;
+      if(R[i2].ok) cur.ok++;
     }
-    els.stOps.innerHTML = html;
+    var last = sessions.slice(-10), sh = "";
+    for(var s2 = 0; s2 < last.length; s2++){
+      var ss = last[s2], acc2 = Math.round(ss.ok / ss.n * 100);
+      var d2 = new Date(ss.start);
+      sh += '<div class="bar" title="' + (d2.getMonth() + 1) + "/" + d2.getDate() + " " + fmtClock(ss.start)
+          + " · " + ss.n + " 题 · 正确率 " + acc2 + '%">'
+          + '<i style="height:' + Math.max(4, acc2) + '%"></i>'
+          + "<span>" + acc2 + "%</span></div>";
+    }
+    els.stSessions.innerHTML = sh || '<div class="empty-stat" style="grid-column:1/-1">暂无练习</div>';
 
-    // 进位 / 借位
-    var c1t = 0, c1o = 0, c0t = 0, c0o = 0;
+    /* 按算子 */
+    var ops = ["+", "−", "×", "÷"], ohtml = "";
+    for(var k = 0; k < ops.length; k++){
+      var o = ops[k], tot = 0, good = 0, secs = 0;
+      for(var j = 0; j < n; j++){
+        if(R[j].op === o){ tot++; secs += R[j].sec || 0; if(R[j].ok) good++; }
+      }
+      ohtml += statRow(o, good, tot, tot ? secs / tot : null);
+    }
+    els.stOps.innerHTML = ohtml;
+
+    /* 进位 / 借位 */
+    var c1t = 0, c1o = 0, c1s = 0, c0t = 0, c0o = 0, c0s = 0;
     for(var j2 = 0; j2 < n; j2++){
-      if(R[j2].carry){ c1t++; if(R[j2].ok) c1o++; }
-      else { c0t++; if(R[j2].ok) c0o++; }
+      if(R[j2].carry){ c1t++; c1s += R[j2].sec || 0; if(R[j2].ok) c1o++; }
+      else { c0t++; c0s += R[j2].sec || 0; if(R[j2].ok) c0o++; }
     }
-    els.stCarry.innerHTML = statRow("有进位", c1o, c1t) + statRow("无进位", c0o, c0t);
+    els.stCarry.innerHTML = statRow("有进位", c1o, c1t, c1t ? c1s / c1t : null)
+                          + statRow("无进位", c0o, c0t, c0t ? c0s / c0t : null);
 
-    // 难度分桶（A 位数 + B 位数）
-    var labels = ["≤4 位", "5-8 位", "9-12 位", ">12 位"];
-    var bt = [0, 0, 0, 0], bo = [0, 0, 0, 0];
+    /* 用时分布 */
+    var tb = [0, 0, 0, 0], tlabels = ["2 秒内", "2-5 秒", "5-10 秒", "10 秒以上"];
     for(var j3 = 0; j3 < n; j3++){
-      var sum = (R[j3].la || 0) + (R[j3].lb || 0);
+      var sec = R[j3].sec || 0;
+      var ti = sec < 2 ? 0 : sec < 5 ? 1 : sec < 10 ? 2 : 3;
+      tb[ti]++;
+    }
+    var th = "";
+    for(var t2 = 0; t2 < 4; t2++) th += distRow(tlabels[t2], tb[t2], n);
+    els.stTime.innerHTML = th;
+    els.stTimeNote.textContent = n
+      ? "答对平均 " + (okCnt ? (okSec / okCnt).toFixed(1) : "—") + "s"
+        + "　|　答错平均 " + (badCnt ? (badSec / badCnt).toFixed(1) : "—") + "s"
+        + (badCnt && okCnt && badSec / badCnt > (okSec / okCnt) * 1.2
+            ? "　→ 错误题明显更慢，注意熟练度" : "")
+      : "";
+
+    /* 难度分桶 */
+    var labels = ["≤4 位", "5-8 位", "9-12 位", ">12 位"];
+    var bt = [0, 0, 0, 0], bo = [0, 0, 0, 0], bs = [0, 0, 0, 0];
+    for(var j4 = 0; j4 < n; j4++){
+      var sum = (R[j4].la || 0) + (R[j4].lb || 0);
       var bi = sum <= 4 ? 0 : sum <= 8 ? 1 : sum <= 12 ? 2 : 3;
-      bt[bi]++; if(R[j3].ok) bo[bi]++;
+      bt[bi]++; bs[bi] += R[j4].sec || 0;
+      if(R[j4].ok) bo[bi]++;
     }
     var lh = "";
-    for(var b2 = 0; b2 < 4; b2++) lh += statRow(labels[b2], bo[b2], bt[b2]);
+    for(var b2 = 0; b2 < 4; b2++) lh += statRow(labels[b2], bo[b2], bt[b2], bt[b2] ? bs[b2] / bt[b2] : null);
     els.stLen.innerHTML = lh;
 
-    // 最近 7 天
+    /* 最近 7 天 */
     var today = new Date(); today.setHours(0, 0, 0, 0);
     var series = [], maxN = 1;
     for(var d = 6; d >= 0; d--){
       var dt = new Date(today.getTime() - d * 86400000);
       var key = dayKey(dt.getTime());
       var cnt = 0, cc = 0;
-      for(var j4 = 0; j4 < n; j4++){
-        if(dayKey(R[j4].t) === key){ cnt++; if(R[j4].ok) cc++; }
+      for(var j5 = 0; j5 < n; j5++){
+        if(dayKey(R[j5].t) === key){ cnt++; if(R[j5].ok) cc++; }
       }
       if(cnt > maxN) maxN = cnt;
       series.push({ label: (dt.getMonth() + 1) + "/" + dt.getDate(), cnt: cnt, acc: cnt ? Math.round(cc / cnt * 100) : 0 });
     }
-    var th = "";
+    var wh = "";
     for(var q2 = 0; q2 < series.length; q2++){
       var it = series[q2];
       var hgt = it.cnt ? Math.max(8, Math.round(it.cnt / maxN * 100)) : 3;
-      th += '<div class="bar" title="' + it.label + "：" + it.cnt + " 题"
+      wh += '<div class="bar" title="' + it.label + "：" + it.cnt + " 题"
           + (it.cnt ? "，正确率 " + it.acc + "%" : "") + '">'
           + '<i style="height:' + hgt + "%" + (it.cnt ? "" : ";opacity:.22") + '"></i>'
           + "<span>" + it.label + "</span></div>";
     }
-    els.stTrend.innerHTML = th;
+    els.stTrend.innerHTML = wh;
   }
 
+  /* ---------------- 设置 / 统计事件 ---------------- */
   els.carrySeg.addEventListener("click", function(e){
     var b = e.target.closest("button[data-v]");
     if(!b) return;
@@ -1000,6 +1151,27 @@
     S.carry = +b.getAttribute("data-v");
     els.carryVal.textContent = ["不限", "必须进位", "禁止进位"][S.carry];
     updateHint();
+  });
+
+  els.showSeg.addEventListener("click", function(e){
+    var b = e.target.closest("button[data-v]");
+    if(!b) return;
+    var btns = els.showSeg.querySelectorAll("button");
+    for(var i = 0; i < btns.length; i++) btns[i].classList.remove("on");
+    b.classList.add("on");
+    S.showMs = +b.getAttribute("data-v");
+    els.showVal.textContent = S.showMs ? (S.showMs / 1000) + " 秒" : "不限";
+    updateHint();
+  });
+
+  els.stRange.addEventListener("click", function(e){
+    var b = e.target.closest("button[data-v]");
+    if(!b) return;
+    var btns = els.stRange.querySelectorAll("button");
+    for(var i = 0; i < btns.length; i++) btns[i].classList.remove("on");
+    b.classList.add("on");
+    S.stRange = b.getAttribute("data-v");
+    renderStats();
   });
 
   els.statsBtn.addEventListener("click", function(){
@@ -1013,6 +1185,25 @@
     if(!S.records.length){ toast("还没有数据"); return; }
     var yes = !window.confirm || window.confirm("确定清空全部练习数据？此操作不可恢复。");
     if(yes){ S.records = []; saveRecords(); renderStats(); toast("数据已清空"); }
+  });
+
+  els.stExport.addEventListener("click", function(){
+    if(!S.records.length){ toast("还没有数据"); return; }
+    var rows = [["时间", "算子", "A位数", "B位数", "进位", "是否正确", "用时(秒)"]];
+    for(var i = 0; i < S.records.length; i++){
+      var r = S.records[i];
+      rows.push([new Date(r.t).toLocaleString(), r.op, r.la, r.lb,
+                 r.carry ? "有" : "无", r.ok ? "对" : "错", r.sec]);
+    }
+    var csv = "\ufeff" + rows.map(function(x){ return x.join(","); }).join("\n");
+    var blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    var link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "math-drill-" + new Date().toISOString().slice(0, 10) + ".csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast("已导出 CSV");
   });
 
   /* ---------------- 初始化 ---------------- */
