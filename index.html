@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>位数计算器 · Digit Calc</title>
+<meta name="description" content="可自定义算子与位数的 BigInt 大数计算器，支持加减乘除、乘方、取模与任意精度小数。">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>∑</text></svg>">
+<style>
+  :root{
+    --bg:#0b0f19;
+    --bg-2:#101827;
+    --card:#141c2e;
+    --line:rgba(255,255,255,.08);
+    --line-strong:rgba(255,255,255,.16);
+    --text:#e8edf7;
+    --muted:#8b97ae;
+    --accent:#7c6cff;
+    --accent-2:#22d3ee;
+    --ok:#34d399;
+    --warn:#fbbf24;
+    --shadow:0 30px 80px -30px rgba(0,0,0,.9);
+  }
+  html[data-theme="light"]{
+    --bg:#eef2f9;
+    --bg-2:#e6ecf6;
+    --card:#ffffff;
+    --line:rgba(16,24,40,.08);
+    --line-strong:rgba(16,24,40,.16);
+    --text:#111a2b;
+    --muted:#5d6b85;
+    --shadow:0 30px 70px -40px rgba(30,45,80,.55);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    margin:0;
+    font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif;
+    color:var(--text);
+    background:
+      radial-gradient(900px 500px at 12% -8%, rgba(124,108,255,.28), transparent 60%),
+      radial-gradient(800px 460px at 95% 0%, rgba(34,211,238,.20), transparent 55%),
+      linear-gradient(180deg,var(--bg),var(--bg-2));
+    min-height:100%;
+    padding:28px 16px 56px;
+    display:flex;
+    justify-content:center;
+    transition:background .35s ease,color .35s ease;
+  }
+  .app{width:100%;max-width:560px}
+
+  /* ---------- header ---------- */
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+  .brand{display:flex;align-items:center;gap:12px;min-width:0}
+  .logo{
+    width:46px;height:46px;border-radius:14px;flex:0 0 auto;
+    display:grid;place-items:center;font-size:24px;font-weight:700;color:#fff;
+    background:linear-gradient(140deg,var(--accent),var(--accent-2));
+    box-shadow:0 12px 30px -10px rgba(124,108,255,.8);
+  }
+  h1{font-size:19px;line-height:1.2;margin:0;letter-spacing:.3px}
+  .brand p{margin:3px 0 0;font-size:12px;color:var(--muted)}
+  .icon-btn{
+    width:42px;height:42px;border-radius:13px;flex:0 0 auto;
+    border:1px solid var(--line-strong);background:var(--card);color:var(--text);
+    font-size:17px;cursor:pointer;transition:.2s;box-shadow:var(--shadow);
+  }
+  .icon-btn:hover{transform:translateY(-1px);border-color:var(--accent)}
+
+  /* ---------- screen ---------- */
+  .screen{
+    position:relative;overflow:hidden;
+    background:linear-gradient(160deg,rgba(255,255,255,.055),rgba(255,255,255,.012));
+    border:1px solid var(--line);border-radius:22px;
+    padding:18px 20px 16px;margin-bottom:14px;box-shadow:var(--shadow);
+  }
+  html[data-theme="light"] .screen{background:linear-gradient(160deg,#f7f9ff,#fff)}
+  .screen::after{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(400px 120px at 90% 0%,rgba(124,108,255,.16),transparent 70%);
+  }
+  .expr{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:13px;color:var(--muted);min-height:18px;
+    white-space:nowrap;overflow-x:auto;scrollbar-width:none;
+  }
+  .expr::-webkit-scrollbar{display:none}
+  .result{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:40px;font-weight:600;line-height:1.15;letter-spacing:-.5px;
+    word-break:break-all;margin:8px 0 10px;
+    background:linear-gradient(90deg,var(--text),var(--text) 60%,var(--accent-2));
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+    transition:font-size .18s ease;
+  }
+  .result.err{font-size:16px;-webkit-text-fill-color:#f87171;background:none}
+  .meta{display:flex;flex-wrap:wrap;gap:8px;font-size:11.5px;color:var(--muted)}
+  .pill{
+    padding:4px 9px;border-radius:999px;border:1px solid var(--line);
+    background:rgba(255,255,255,.03);white-space:nowrap;
+  }
+  .pill b{color:var(--text);font-weight:600}
+  .pill.ok b{color:var(--ok)}
+  .pill.round b{color:var(--warn)}
+
+  /* ---------- section ---------- */
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:20px;
+    padding:16px;margin-bottom:14px;box-shadow:var(--shadow);
+  }
+  .label{
+    font-size:11px;letter-spacing:1.4px;text-transform:uppercase;
+    color:var(--muted);margin-bottom:10px;
+  }
+  .chips{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+  .chip{
+    aspect-ratio:1/.82;border-radius:14px;cursor:pointer;
+    border:1px solid var(--line-strong);background:transparent;color:var(--text);
+    font-size:20px;font-weight:600;transition:.18s;
+    display:grid;place-items:center;
+  }
+  .chip:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .chip.active{
+    background:linear-gradient(140deg,var(--accent),var(--accent-2));
+    border-color:transparent;color:#fff;
+    box-shadow:0 12px 26px -12px rgba(124,108,255,.95);
+  }
+
+  /* ---------- inputs ---------- */
+  .operands{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .field label{display:block;font-size:11px;color:var(--muted);margin-bottom:7px;letter-spacing:.6px}
+  .field input{
+    width:100%;padding:13px 14px;border-radius:14px;
+    border:1px solid var(--line-strong);background:rgba(0,0,0,.22);color:var(--text);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:15px;outline:none;transition:.18s;
+  }
+  html[data-theme="light"] .field input{background:#f4f6fc}
+  .field input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(124,108,255,.16)}
+  .field input::placeholder{color:var(--muted);opacity:.65}
+
+  /* ---------- settings ---------- */
+  .setting{margin-bottom:16px}
+  .setting:last-child{margin-bottom:0}
+  .row{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:9px}
+  .row span{font-size:13px;color:var(--muted)}
+  .row b{font-size:13px;color:var(--text);font-variant-numeric:tabular-nums}
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:999px;
+    background:linear-gradient(90deg,var(--accent) var(--p,50%),var(--line-strong) var(--p,50%));
+    outline:none;cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:22px;height:22px;border-radius:50%;
+    background:#fff;border:3px solid var(--accent);
+    box-shadow:0 4px 14px rgba(0,0,0,.35);cursor:grab;
+  }
+  input[type=range]::-moz-range-thumb{
+    width:18px;height:18px;border-radius:50%;background:#fff;border:3px solid var(--accent);
+  }
+  .switch{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted);cursor:pointer;user-select:none}
+  .switch input{appearance:none;-webkit-appearance:none;width:38px;height:22px;border-radius:999px;background:var(--line-strong);position:relative;cursor:pointer;transition:.2s;flex:0 0 auto}
+  .switch input::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s}
+  .switch input:checked{background:var(--accent)}
+  .switch input:checked::after{transform:translateX(16px)}
+
+  /* ---------- actions ---------- */
+  .actions{display:grid;grid-template-columns:1fr 1.7fr;gap:12px;margin-bottom:14px}
+  .btn{
+    padding:15px 18px;border-radius:16px;font-size:15px;font-weight:600;cursor:pointer;
+    border:1px solid var(--line-strong);background:var(--card);color:var(--text);
+    transition:.18s;font-family:inherit;
+  }
+  .btn:hover{transform:translateY(-1px)}
+  .btn:active{transform:translateY(0) scale(.99)}
+  .btn.primary{
+    border-color:transparent;color:#fff;
+    background:linear-gradient(135deg,var(--accent),var(--accent-2));
+    box-shadow:0 18px 36px -18px rgba(124,108,255,.95);
+  }
+  .btn.small{padding:9px 12px;font-size:12px;border-radius:11px;background:transparent;color:var(--muted)}
+
+  /* ---------- history ---------- */
+  .hist-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .hist-head span{font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted)}
+  #histList{list-style:none;margin:0;padding:0;max-height:260px;overflow-y:auto}
+  #histList li{
+    display:flex;justify-content:space-between;gap:14px;align-items:center;
+    padding:11px 4px;border-bottom:1px dashed var(--line);cursor:pointer;
+    transition:.15s;
+  }
+  #histList li:last-child{border-bottom:0}
+  #histList li:hover{background:rgba(124,108,255,.07);border-radius:8px}
+  #histList .h-expr{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  #histList .h-res{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:13px;font-weight:600;flex:0 0 auto;max-width:52%;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .empty{padding:22px 0;text-align:center;color:var(--muted);font-size:12.5px}
+
+  footer{text-align:center;font-size:11px;color:var(--muted);margin-top:22px;line-height:1.7}
+  footer a{color:var(--muted);text-decoration:none;border-bottom:1px dotted var(--line-strong)}
+
+  .toast{
+    position:fixed;left:50%;bottom:28px;transform:translate(-50%,20px);
+    background:var(--text);color:var(--bg);padding:11px 20px;border-radius:999px;
+    font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:.25s;
+    z-index:99;box-shadow:0 20px 40px -12px rgba(0,0,0,.5);
+  }
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+
+  @media (max-width:420px){
+    .result{font-size:30px}
+    .chip{font-size:18px;border-radius:12px}
+    .chips{gap:6px}
+    .operands{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="logo">∑</div>
+      <div>
+        <h1>位数计算器</h1>
+        <p>BigInt 大数运算 · 自定义算子与位数</p>
+      </div>
+    </div>
+    <button class="icon-btn" id="themeBtn" title="切换主题">🌙</button>
+  </header>
+
+  <section class="screen">
+    <div class="expr" id="expr">等待输入…</div>
+    <div class="result" id="result">0</div>
+    <div class="meta" id="meta">
+      <span class="pill">支持 <b>数百位</b> 大整数</span>
+      <span class="pill">任意精度小数</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="label">算子</div>
+    <div class="chips" id="ops">
+      <button class="chip active" data-op="+">＋</button>
+      <button class="chip" data-op="-">－</button>
+      <button class="chip" data-op="×">×</button>
+      <button class="chip" data-op="÷">÷</button>
+      <button class="chip" data-op="^">xʸ</button>
+      <button class="chip" data-op="%">mod</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="operands">
+      <div class="field">
+        <label>操作数 A</label>
+        <input id="a" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="例如 123456">
+      </div>
+      <div class="field">
+        <label>操作数 B</label>
+        <input id="b" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="例如 789">
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="setting">
+      <div class="row"><span>操作数位数（随机生成）</span><b id="digitsVal">6 位</b></div>
+      <input type="range" id="digits" min="1" max="120" value="6">
+    </div>
+    <div class="setting">
+      <div class="row"><span>结果小数位（运算精度）</span><b id="precVal">4 位</b></div>
+      <input type="range" id="prec" min="0" max="30" value="4">
+    </div>
+    <label class="switch"><input type="checkbox" id="randDec"> 随机生成时包含小数</label>
+  </section>
+
+  <div class="actions">
+    <button class="btn" id="randBtn">随机生成</button>
+    <button class="btn primary" id="calcBtn">计算 =</button>
+  </div>
+
+  <section class="card">
+    <div class="hist-head"><span>历史记录</span><button class="btn small" id="clearBtn">清空</button></div>
+    <ul id="histList"><li class="empty" style="border:0;cursor:default">暂无记录</li></ul>
+  </section>
+
+  <footer>
+    纯前端 · 无后端 · BigInt 精确整数运算<br>
+    <a href="https://github.com/Clonedman9" target="_blank" rel="noopener">GitHub</a>
+  </footer>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  var TEN = BigInt(10);
+  var MAX_RESULT_DIGITS = 4000;
+
+  /* ---------------- 数字解析与格式化 ---------------- */
+  function pow10(n){
+    if(n === 0) return BigInt(1);
+    return TEN ** BigInt(n);
+  }
+
+  // 解析十进制字符串 => {m: BigInt, s: 小数位数}, 值 = m * 10^-s
+  function parseDec(raw){
+    var t = String(raw == null ? "" : raw).trim().replace(/[,\s_]/g, "");
+    if(!t) throw new Error("请输入数字");
+    var neg = false;
+    if(t.charAt(0) === "+") t = t.slice(1);
+    if(t.charAt(0) === "-"){ neg = true; t = t.slice(1); }
+    if(!/^(\d+(\.\d*)?|\.\d+)$/.test(t)) throw new Error("无法识别：" + raw);
+    var parts = t.split(".");
+    var intPart = parts[0] || "0";
+    var frac = (parts[1] || "").replace(/0+$/, "");
+    var m = BigInt(intPart + frac);
+    if(neg) m = -m;
+    return { m: m, s: frac.length };
+  }
+
+  // {m,s} => 字符串
+  function fmt(v){
+    var neg = v.m < BigInt(0);
+    var abs = neg ? -v.m : v.m;
+    var d = abs.toString();
+    if(v.s > 0){
+      if(d.length <= v.s) d = new Array(v.s + 1 - d.length + 1).join("0") + d;
+      var i = d.slice(0, d.length - v.s);
+      var f = d.slice(d.length - v.s).replace(/0+$/, "");
+      d = f ? i + "." + f : i;
+    }
+    return (neg ? "-" : "") + d;
+  }
+
+  function roundTo(v, p){
+    if(v.s <= p) return v;
+    var drop = v.s - p;
+    var d = pow10(drop);
+    var q = v.m / d;
+    var r = v.m % d;
+    var rr = r < BigInt(0) ? -r : r;
+    if(rr * BigInt(2) >= d) q += (v.m < BigInt(0) ? BigInt(-1) : BigInt(1));
+    return { m: q, s: p };
+  }
+
+  function align(a, b){
+    var s = Math.max(a.s, b.s);
+    return [ a.m * pow10(s - a.s), b.m * pow10(s - b.s), s ];
+  }
+
+  function add(a, b){ var x = align(a, b); return { m: x[0] + x[1], s: x[2] }; }
+  function sub(a, b){ var x = align(a, b); return { m: x[0] - x[1], s: x[2] }; }
+  function mul(a, b){ return { m: a.m * b.m, s: a.s + b.s }; }
+
+  function div(a, b, prec){
+    if(b.m === BigInt(0)) throw new Error("除数不能为 0");
+    // a/b = (a.m * 10^b.s) / (b.m * 10^a.s)
+    var num = a.m * pow10(b.s + prec);
+    var den = b.m * pow10(a.s);
+    var q = num / den;
+    var r = num % den;
+    var rr = r < BigInt(0) ? -r : r;
+    var dd = den < BigInt(0) ? -den : den;
+    if(rr * BigInt(2) >= dd){
+      var sameSign = (num < BigInt(0)) === (den < BigInt(0));
+      q += sameSign ? BigInt(1) : BigInt(-1);
+    }
+    return { m: q, s: prec };
+  }
+
+  function gcd(a, b){
+    if(a < BigInt(0)) a = -a;
+    if(b < BigInt(0)) b = -b;
+    while(b !== BigInt(0)){ var t = a % b; a = b; b = t; }
+    return a;
+  }
+
+  // 若 a/b 是有限小数，返回其精确小数位数；否则返回 -1
+  function exactScale(a, b){
+    var num = a.m * pow10(b.s);
+    var den = b.m * pow10(a.s);
+    if(num === BigInt(0)) return 0;
+    if(den < BigInt(0)) den = -den;
+    if(num < BigInt(0)) num = -num;
+    var g = gcd(num, den);
+    if(g !== BigInt(0)) den = den / g;
+    var two = 0, five = 0;
+    while(den % BigInt(2) === BigInt(0)){
+      den = den / BigInt(2); two++;
+      if(two + five > 120) return -1;
+    }
+    while(den % BigInt(5) === BigInt(0)){
+      den = den / BigInt(5); five++;
+      if(two + five > 120) return -1;
+    }
+    return den === BigInt(1) ? Math.max(two, five) : -1;
+  }
+
+  function isInt(v){ return v.s === 0 || v.m % pow10(v.s) === BigInt(0); }
+
+  function digitCount(str){
+    return str.replace(/[-.]/g, "").replace(/^0+(?=\d)/, "").length;
+  }
+
+  function guard(v){
+    if(v.m.toString().replace("-", "").length > MAX_RESULT_DIGITS){
+      throw new Error("结果位数过多（上限 " + MAX_RESULT_DIGITS + " 位）");
+    }
+    return v;
+  }
+
+  /* ---------------- 运算核心 ---------------- */
+  function compute(op, A, B, prec){
+    var res, exact = true, extra = "";
+    switch(op){
+      case "+": res = add(A, B); break;
+      case "-": res = sub(A, B); break;
+      case "×": res = guard(mul(A, B)); break;
+      case "÷": {
+        var sc = exactScale(A, B);
+        if(sc >= 0){ res = div(A, B, sc); exact = true; }
+        else { res = div(A, B, prec); exact = false; }
+        break;
+      }
+      case "^": {
+        if(!isInt(B)) throw new Error("指数必须是整数");
+        var n = B.m / pow10(B.s);
+        if(n > BigInt(64) || n < BigInt(-64)) throw new Error("指数范围：-64 ~ 64");
+        var negExp = n < BigInt(0);
+        var e = negExp ? -n : n;
+        var base = { m: A.m, s: A.s };
+        var acc = { m: BigInt(1), s: 0 };
+        while(e > BigInt(0)){
+          if(e % BigInt(2) === BigInt(1)){ acc = guard(mul(acc, base)); }
+          e = e / BigInt(2);
+          if(e > BigInt(0)) base = guard(mul(base, base));
+        }
+        res = acc;
+        if(negExp){
+          if(acc.m === BigInt(0)) throw new Error("0 不能作负指数");
+          var inc = { m: BigInt(1), s: 0 };
+          var sc2 = exactScale(inc, acc);
+          if(sc2 >= 0){ res = div(inc, acc, sc2); exact = true; }
+          else { res = div(inc, acc, prec); exact = false; }
+        } else {
+          exact = true;
+        }
+        break;
+      }
+      case "%": {
+        if(!isInt(A) || !isInt(B)) throw new Error("取模只支持整数");
+        var ai = A.m / pow10(A.s), bi = B.m / pow10(B.s);
+        if(bi === BigInt(0)) throw new Error("模数不能为 0");
+        res = { m: ai % bi, s: 0 };
+        break;
+      }
+      default: throw new Error("未知算子");
+    }
+    return { v: guard(res), exact: exact };
+  }
+
+  /* ---------------- DOM ---------------- */
+  var $ = function(id){ return document.getElementById(id); };
+  var el = {
+    a: $("a"), b: $("b"),
+    expr: $("expr"), result: $("result"), meta: $("meta"),
+    ops: $("ops"), digits: $("digits"), digitsVal: $("digitsVal"),
+    prec: $("prec"), precVal: $("precVal"), randDec: $("randDec"),
+    randBtn: $("randBtn"), calcBtn: $("calcBtn"),
+    histList: $("histList"), clearBtn: $("clearBtn"),
+    themeBtn: $("themeBtn"), toast: $("toast")
+  };
+
+  var state = { op: "+", history: [] };
+  var HIST_KEY = "digitcalc.history.v1";
+  var THEME_KEY = "digitcalc.theme.v1";
+
+  function toast(msg){
+    el.toast.textContent = msg;
+    el.toast.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function(){ el.toast.classList.remove("show"); }, 1500);
+  }
+
+  function setRangeFill(node){
+    var min = parseFloat(node.min), max = parseFloat(node.max), v = parseFloat(node.value);
+    var p = ((v - min) / (max - min)) * 100;
+    node.style.setProperty("--p", p + "%");
+  }
+
+  function sizeResult(txt){
+    var n = txt.length;
+    var size = 40;
+    if(n > 12) size = 34;
+    if(n > 18) size = 28;
+    if(n > 26) size = 22;
+    if(n > 36) size = 18;
+    if(n > 48) size = 15;
+    el.result.style.fontSize = size + "px";
+  }
+
+  function renderMeta(info){
+    if(!info){ return; }
+    var html = "";
+    html += '<span class="pill">结果 <b>' + info.digits + "</b> 位数字</span>";
+    if(info.decimals > 0) html += '<span class="pill">小数 <b>' + info.decimals + " 位</b></span>";
+    html += info.exact
+      ? '<span class="pill ok">精确值</span>'
+      : '<span class="pill round">四舍五入至 ' + info.prec + " 位</span>";
+    html += '<span class="pill">耗时 <b>' + info.ms + "</b> ms</span>";
+    el.meta.innerHTML = html;
+  }
+
+  function updateExpr(){
+    var a = el.a.value.trim() || "A";
+    var b = el.b.value.trim() || "B";
+    el.expr.textContent = a + " " + state.op + " " + b;
+  }
+
+  function calc(silent){
+    updateExpr();
+    var rawA = el.a.value.trim(), rawB = el.b.value.trim();
+    if(!rawA && !rawB){ return; }
+    try{
+      var A = parseDec(rawA), B = parseDec(rawB);
+      var prec = parseInt(el.prec.value, 10);
+      var t0 = performance.now();
+      var out = compute(state.op, A, B, prec);
+      var ms = Math.max(0.1, performance.now() - t0).toFixed(2);
+      var text = fmt(out.v);
+      el.result.classList.remove("err");
+      el.result.textContent = text;
+      sizeResult(text);
+      renderMeta({
+        digits: digitCount(text),
+        decimals: out.v.s > 0 ? (text.split(".")[1] || "").length : 0,
+        exact: out.exact,
+        prec: prec,
+        ms: ms
+      });
+      // 记录历史
+      var exprText = rawA + " " + state.op + " " + rawB;
+      if(!silent && text.length < 200){
+        pushHistory(exprText, text);
+      }
+      return { expr: exprText, text: text };
+    }catch(err){
+      el.result.classList.add("err");
+      el.result.textContent = "⚠ " + err.message;
+      el.result.style.fontSize = "16px";
+      el.meta.innerHTML = '<span class="pill">检查输入与算子</span>';
+      return null;
+    }
+  }
+
+  function pushHistory(expr, result){
+    var last = state.history[0];
+    if(last && last.expr === expr && last.result === result) return;
+    state.history.unshift({ expr: expr, result: result, t: Date.now() });
+    if(state.history.length > 30) state.history.length = 30;
+    saveHistory();
+    renderHistory();
+  }
+
+  function saveHistory(){
+    try{ localStorage.setItem(HIST_KEY, JSON.stringify(state.history)); }catch(e){}
+  }
+
+  function loadHistory(){
+    try{
+      var raw = localStorage.getItem(HIST_KEY);
+      if(raw) state.history = JSON.parse(raw) || [];
+    }catch(e){ state.history = []; }
+  }
+
+  function renderHistory(){
+    if(!state.history.length){
+      el.histList.innerHTML = '<li class="empty" style="border:0;cursor:default">暂无记录</li>';
+      return;
+    }
+    var html = "";
+    for(var i = 0; i < state.history.length; i++){
+      var h = state.history[i];
+      html += '<li data-i="' + i + '">'
+            + '<span class="h-expr">' + escapeHtml(h.expr) + "</span>"
+            + '<span class="h-res">' + escapeHtml(h.result) + "</span></li>";
+    }
+    el.histList.innerHTML = html;
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  /* ---------------- 随机生成 ---------------- */
+  function randDigits(n){
+    var s = String(1 + Math.floor(Math.random() * 9));
+    for(var i = 1; i < n; i++) s += String(Math.floor(Math.random() * 10));
+    return s;
+  }
+
+  function randDec(n, maxFrac){
+    var fracLen = 1 + Math.floor(Math.random() * maxFrac);
+    var f = "";
+    for(var i = 0; i < fracLen; i++) f += String(Math.floor(Math.random() * 10));
+    return randDigits(n) + "." + f;
+  }
+
+  function randomize(){
+    var n = parseInt(el.digits.value, 10);
+    var dec = el.randDec.checked;
+    var maxFrac = Math.max(1, Math.min(n, 8));
+    el.a.value = dec ? randDec(n, maxFrac) : randDigits(n);
+    el.b.value = dec ? randDec(Math.max(1, Math.floor(n / 2)), maxFrac) : randDigits(Math.max(1, Math.floor(n / 2)));
+    if(state.op === "%" && dec){
+      el.a.value = randDigits(n);
+      el.b.value = randDigits(Math.max(1, Math.floor(n / 2)));
+    }
+    calc(true);
+  }
+
+  /* ---------------- 事件绑定 ---------------- */
+  el.ops.addEventListener("click", function(e){
+    var btn = e.target.closest(".chip");
+    if(!btn) return;
+    var chips = el.ops.querySelectorAll(".chip");
+    for(var i = 0; i < chips.length; i++) chips[i].classList.remove("active");
+    btn.classList.add("active");
+    state.op = btn.getAttribute("data-op");
+    calc(true);
+  });
+
+  el.digits.addEventListener("input", function(){
+    el.digitsVal.textContent = el.digits.value + " 位";
+    setRangeFill(el.digits);
+  });
+
+  el.prec.addEventListener("input", function(){
+    el.precVal.textContent = el.prec.value + " 位";
+    setRangeFill(el.prec);
+    calc(true);
+  });
+
+  el.randBtn.addEventListener("click", randomize);
+  el.calcBtn.addEventListener("click", function(){
+    var r = calc(false);
+    if(r) toast("已计算");
+  });
+
+  [el.a, el.b].forEach(function(input){
+    input.addEventListener("input", function(){ calc(true); });
+    input.addEventListener("keydown", function(e){
+      if(e.key === "Enter"){ calc(false); }
+    });
+  });
+
+  el.clearBtn.addEventListener("click", function(){
+    state.history = [];
+    saveHistory();
+    renderHistory();
+    toast("历史已清空");
+  });
+
+  el.histList.addEventListener("click", function(e){
+    var li = e.target.closest("li[data-i]");
+    if(!li) return;
+    var h = state.history[parseInt(li.getAttribute("data-i"), 10)];
+    if(!h) return;
+    var m = h.expr.match(/^(.*?)\s+([+\-×÷^%])\s+(.*)$/);
+    if(m){
+      el.a.value = m[1];
+      el.b.value = m[3];
+      state.op = m[2];
+      var chips = el.ops.querySelectorAll(".chip");
+      for(var i = 0; i < chips.length; i++){
+        chips[i].classList.toggle("active", chips[i].getAttribute("data-op") === state.op);
+      }
+      calc(true);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  });
+
+  el.themeBtn.addEventListener("click", function(){
+    var cur = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+    var next = cur === "light" ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", next);
+    el.themeBtn.textContent = next === "light" ? "☀️" : "🌙";
+    try{ localStorage.setItem(THEME_KEY, next); }catch(e){}
+  });
+
+  /* ---------------- 初始化 ---------------- */
+  (function init(){
+    var saved = null;
+    try{ saved = localStorage.getItem(THEME_KEY); }catch(e){}
+    if(saved === "light"){
+      document.documentElement.setAttribute("data-theme", "light");
+      el.themeBtn.textContent = "☀️";
+    }
+    setRangeFill(el.digits);
+    setRangeFill(el.prec);
+    el.digitsVal.textContent = el.digits.value + " 位";
+    el.precVal.textContent = el.prec.value + " 位";
+    loadHistory();
+    renderHistory();
+    randomize();
+  })();
+})();
+</script>
+</body>
+</html>
