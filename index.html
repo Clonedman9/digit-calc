@@ -189,6 +189,18 @@
   .stat-note{margin-top:10px;font-size:11.5px;color:var(--muted);line-height:1.6}
   .q-expr.hidden{color:var(--muted);opacity:.55;letter-spacing:10px;font-weight:500}
   .seg.five button{font-size:12px;padding:10px 2px}
+  .custom{display:none;align-items:center;gap:8px;margin-top:9px}
+  .custom.show{display:flex}
+  .custom input{
+    flex:1;min-width:0;padding:11px 12px;border-radius:12px;border:1px solid var(--line-strong);
+    background:rgba(0,0,0,.22);color:var(--text);outline:none;font-size:14px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;transition:.18s;
+  }
+  html[data-theme="light"] .custom input{background:#f4f6fc}
+  .custom input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(124,108,255,.14)}
+  .custom span{font-size:12px;color:var(--muted);flex:0 0 auto}
+  .custom input::-webkit-outer-spin-button,.custom input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  .custom input::placeholder{color:var(--muted);opacity:.6;font-size:12.5px}
 
   /* ---------- 结算 ---------- */
   .score{
@@ -279,30 +291,44 @@
       </div>
       <div class="setting">
         <div class="row"><span>题目数量</span><b id="totalVal">10 题</b></div>
-        <div class="seg" id="totalSeg">
-          <button data-v="10" class="on">10 题</button>
-          <button data-v="20">20 题</button>
-          <button data-v="30">30 题</button>
+        <div class="seg five" id="totalSeg">
+          <button data-v="10" class="on">10</button>
+          <button data-v="20">20</button>
+          <button data-v="30">30</button>
           <button data-v="0">无限</button>
+          <button data-v="custom">自定义</button>
+        </div>
+        <div class="custom" id="totalCustom">
+          <input id="totalInput" type="number" inputmode="numeric" min="1" max="999" step="1" placeholder="输入题数，如 50">
+          <span>题</span>
         </div>
       </div>
       <div class="setting">
         <div class="row"><span>每题限时</span><b id="limitVal">不限时</b></div>
-        <div class="seg" id="limitSeg">
+        <div class="seg five" id="limitSeg">
           <button data-v="0" class="on">不限</button>
-          <button data-v="10">10 秒</button>
-          <button data-v="20">20 秒</button>
-          <button data-v="30">30 秒</button>
+          <button data-v="10">10s</button>
+          <button data-v="20">20s</button>
+          <button data-v="30">30s</button>
+          <button data-v="custom">自定义</button>
+        </div>
+        <div class="custom" id="limitCustom">
+          <input id="limitInput" type="number" inputmode="decimal" min="1" max="600" step="1" placeholder="输入秒数，如 45">
+          <span>秒</span>
         </div>
       </div>
       <div class="setting">
         <div class="row"><span>算式显示时长（到时自动隐藏）</span><b id="showVal">不限</b></div>
         <div class="seg five" id="showSeg">
           <button data-v="0" class="on">不限</button>
-          <button data-v="1000">1 秒</button>
-          <button data-v="2000">2 秒</button>
-          <button data-v="3000">3 秒</button>
-          <button data-v="5000">5 秒</button>
+          <button data-v="500">500ms</button>
+          <button data-v="1000">1000ms</button>
+          <button data-v="2000">2000ms</button>
+          <button data-v="custom">自定义</button>
+        </div>
+        <div class="custom" id="showCustom">
+          <input id="showInput" type="number" inputmode="numeric" min="50" max="60000" step="100" placeholder="毫秒，如 1500">
+          <span>ms</span>
         </div>
       </div>
     </div>
@@ -462,6 +488,9 @@
     stats: $("statsView"), statsBtn: $("statsBtn"),
     carrySeg: $("carrySeg"), carryVal: $("carryVal"),
     showSeg: $("showSeg"), showVal: $("showVal"),
+    showCustom: $("showCustom"), showInput: $("showInput"),
+    totalCustom: $("totalCustom"), totalInput: $("totalInput"),
+    limitCustom: $("limitCustom"), limitInput: $("limitInput"),
     stRange: $("stRange"),
     stAcc: $("stAcc"), stSub: $("stSub"), stTotal: $("stTotal"), stAvg: $("stAvg"),
     stDur: $("stDur"), stDays: $("stDays"), stStreak: $("stStreak"), stWrong: $("stWrong"),
@@ -861,7 +890,7 @@
     if(S.ops.indexOf("−") >= 0) t += " · 减法不出现负数";
     if(S.carry === 1) t += " · 每题必定进位/借位";
     if(S.carry === 2) t += " · 每题不含进位/借位";
-    if(S.showMs) t += " · 算式 " + (S.showMs / 1000) + " 秒后隐藏";
+    if(S.showMs) t += " · 算式 " + S.showMs + " ms 后隐藏";
     els.hint.textContent = t;
   }
 
@@ -884,24 +913,61 @@
     updateHint();
   });
 
+  function pickSeg(seg, btn){
+    var btns = seg.querySelectorAll("button");
+    for(var i = 0; i < btns.length; i++) btns[i].classList.remove("on");
+    btn.classList.add("on");
+  }
+
+  function applyTotal(v){
+    if(isNaN(v) || v < 0) v = 0;
+    if(v > 999) v = 999;
+    S.total = Math.floor(v);
+    els.totalVal.textContent = S.total ? S.total + " 题" : "无限";
+  }
+
   els.totalSeg.addEventListener("click", function(e){
     var b = e.target.closest("button[data-v]");
     if(!b) return;
-    var btns = els.totalSeg.querySelectorAll("button");
-    for(var i = 0; i < btns.length; i++) btns[i].classList.remove("on");
-    b.classList.add("on");
-    S.total = +b.getAttribute("data-v");
-    els.totalVal.textContent = S.total ? S.total + " 题" : "无限";
+    pickSeg(els.totalSeg, b);
+    if(b.getAttribute("data-v") === "custom"){
+      els.totalCustom.classList.add("show");
+      els.totalInput.focus();
+      if(els.totalInput.value !== "") applyTotal(parseInt(els.totalInput.value, 10));
+      return;
+    }
+    els.totalCustom.classList.remove("show");
+    applyTotal(+b.getAttribute("data-v"));
   });
+
+  els.totalInput.addEventListener("input", function(){
+    applyTotal(parseInt(els.totalInput.value, 10) || 0);
+  });
+
+  function applyLimit(v){
+    if(isNaN(v) || v < 0) v = 0;
+    if(v > 600) v = 600;
+    v = Math.round(v * 10) / 10;
+    S.limit = v;
+    els.limitVal.textContent = v ? v + " 秒" : "不限时";
+  }
 
   els.limitSeg.addEventListener("click", function(e){
     var b = e.target.closest("button[data-v]");
     if(!b) return;
-    var btns = els.limitSeg.querySelectorAll("button");
-    for(var i = 0; i < btns.length; i++) btns[i].classList.remove("on");
-    b.classList.add("on");
-    S.limit = +b.getAttribute("data-v");
-    els.limitVal.textContent = S.limit ? S.limit + " 秒" : "不限时";
+    pickSeg(els.limitSeg, b);
+    if(b.getAttribute("data-v") === "custom"){
+      els.limitCustom.classList.add("show");
+      els.limitInput.focus();
+      if(els.limitInput.value !== "") applyLimit(parseFloat(els.limitInput.value));
+      return;
+    }
+    els.limitCustom.classList.remove("show");
+    applyLimit(+b.getAttribute("data-v"));
+  });
+
+  els.limitInput.addEventListener("input", function(){
+    applyLimit(parseFloat(els.limitInput.value) || 0);
   });
 
   /* ---------------- 内置键盘 ---------------- */
@@ -1153,15 +1219,30 @@
     updateHint();
   });
 
+  function applyShow(v){
+    if(isNaN(v) || v < 0) v = 0;
+    if(v > 60000) v = 60000;
+    S.showMs = Math.round(v);
+    els.showVal.textContent = S.showMs ? S.showMs + " ms" : "不限";
+    updateHint();
+  }
+
   els.showSeg.addEventListener("click", function(e){
     var b = e.target.closest("button[data-v]");
     if(!b) return;
-    var btns = els.showSeg.querySelectorAll("button");
-    for(var i = 0; i < btns.length; i++) btns[i].classList.remove("on");
-    b.classList.add("on");
-    S.showMs = +b.getAttribute("data-v");
-    els.showVal.textContent = S.showMs ? (S.showMs / 1000) + " 秒" : "不限";
-    updateHint();
+    pickSeg(els.showSeg, b);
+    if(b.getAttribute("data-v") === "custom"){
+      els.showCustom.classList.add("show");
+      els.showInput.focus();
+      if(els.showInput.value !== "") applyShow(parseInt(els.showInput.value, 10));
+      return;
+    }
+    els.showCustom.classList.remove("show");
+    applyShow(+b.getAttribute("data-v"));
+  });
+
+  els.showInput.addEventListener("input", function(){
+    applyShow(parseInt(els.showInput.value, 10) || 0);
   });
 
   els.stRange.addEventListener("click", function(e){
