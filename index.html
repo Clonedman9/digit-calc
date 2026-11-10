@@ -409,6 +409,10 @@
           <input type="checkbox" id="adaptShow">
           <span>自适应：答对缩短、答错延长</span>
         </label>
+        <div class="setting" id="adaptMinBox" style="margin:14px 0 0;display:none">
+          <div class="row"><span>自适应最低显示时长</span><b id="adaptMinVal">100 ms</b></div>
+          <input type="range" id="adaptMin" min="20" max="1000" step="10" value="100">
+        </div>
       </div>
     </div>
 
@@ -567,6 +571,7 @@
     carrySeg: $("carrySeg"), carryVal: $("carryVal"),
     showSeg: $("showSeg"), showVal: $("showVal"),
     showCustom: $("showCustom"), showInput: $("showInput"), adaptShow: $("adaptShow"),
+    adaptMin: $("adaptMin"), adaptMinVal: $("adaptMinVal"), adaptMinBox: $("adaptMinBox"),
     showHint: $("showHint"),
     totalCustom: $("totalCustom"), totalInput: $("totalInput"),
     limitCustom: $("limitCustom"), limitInput: $("limitInput"),
@@ -589,6 +594,7 @@
     carry: 0,          // 0 不限 / 1 必须进位借位 / 2 禁止进位借位
     showMs: 0,         // 算式显示多久后隐藏（毫秒），0 = 不隐藏
     adaptShow: false,  // 自适应：答对缩短、答错延长
+    adaptMin: 100,     // 自适应下限（ms），可自定义
     curShow: 0,        // 本轮当前的显示时长
     hideTimer: null,
     stRange: "all",    // 统计范围 all / 7 / 1
@@ -904,9 +910,10 @@
     // 自适应：答对缩短、答错延长（只影响下一题）
     if(S.adaptShow && S.showMs > 0){
       var cap = Math.min(10000, Math.max(S.showMs * 2, 3000));
+      var floor = Math.max(20, Math.min(S.adaptMin, S.showMs));   // 下限不超过基准
       var nx = correct ? S.curShow * 0.8 : S.curShow * 1.3;
       nx = Math.round(nx / 10) * 10;
-      S.curShow = Math.max(100, Math.min(cap, nx));
+      S.curShow = Math.max(floor, Math.min(cap, nx));
     }
 
     // 不显示对错，立刻进入下一题
@@ -1010,7 +1017,7 @@
     if(S.carry === 1) t += " · 每题必定进位/借位";
     if(S.carry === 2) t += " · 每题不含进位/借位";
     if(S.showMs) t += " · 算式 " + S.showMs + " ms 后隐藏";
-    if(S.showMs && S.adaptShow) t += "（答对缩短、答错延长）";
+    if(S.showMs && S.adaptShow) t += "（答对缩短、答错延长，下限 " + Math.min(S.adaptMin, S.showMs) + "ms）";
     els.hint.textContent = t;
     updateSummary();
   }
@@ -1021,6 +1028,8 @@
   }
 
   els.digitsA.addEventListener("input", function(){
+    S.adaptMin = +els.adaptMin.value;
+    syncAdaptMin();
     S.da = +els.digitsA.value;
     els.digitsAVal.textContent = S.da + " 位";
     setFill(els.digitsA);
@@ -1415,12 +1424,25 @@
     els.showCustom.classList.remove("show");
   }
 
+  function syncAdaptMin(){
+    els.adaptMinBox.style.display = S.adaptShow ? "" : "none";
+    els.adaptMinVal.textContent = S.adaptMin + " ms";
+    setFill(els.adaptMin);
+  }
+
+  els.adaptMin.addEventListener("input", function(){
+    S.adaptMin = +els.adaptMin.value;
+    syncAdaptMin();
+    updateHint();
+  });
+
   els.adaptShow.addEventListener("change", function(){
     S.adaptShow = els.adaptShow.checked;
     if(S.adaptShow && !S.showMs){        // 没设显示时长时，自适应给个基准
       setShowPreset(2000);
       applyShow(2000);
     }
+    syncAdaptMin();
     updateHint();
   });
 
