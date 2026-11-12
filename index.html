@@ -1046,10 +1046,6 @@
   }
 
   els.digitsA.addEventListener("input", function(){
-    S.divTol = +els.divTol.value;
-    setFill(els.divTol);
-    S.adaptMin = +els.adaptMin.value;
-    syncAdaptMin();
     S.da = +els.digitsA.value;
     els.digitsAVal.textContent = S.da + " 位";
     setFill(els.digitsA);
@@ -1529,6 +1525,8 @@
     els.digitsBVal.textContent = S.db + " 位";
     setFill(els.digitsA);
     setFill(els.digitsB);
+    setFill(els.divTol);
+    setFill(els.adaptMin);
     loadRecords();
     updateHint();
   })();
