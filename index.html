@@ -633,9 +633,10 @@
 
   var S = {
     ops: ["+", "−", "×"],
-    da: 2,          // 数字 A 位数
-    db: 2,          // 数字 B 位数
-    total: 10,
+    dg: { "+": {a: 2, b: 2}, "−": {a: 2, b: 2}, "×": {a: 2, b: 2}, "÷": {a: 2, b: 2} },  // 每种运算的 A/B 位数
+    cnt: { "+": 10, "−": 10, "×": 10, "÷": 10 },   // 每种运算的题数（0 = 不出该题型）
+    unlimited: false,   // 无限模式：忽略题数随机出题
+    total: 0,
     limit: 0,
     carry: 0,          // 0 不限 / 1 必须进位借位 / 2 禁止进位借位
     divTol: 0,         // 除法容差（百分比），答案在 ±该值内算对
@@ -773,7 +774,10 @@
     if(q.op === "+") return addCarry(q.a, q.b);
     if(q.op === "−") return subBorrow(q.a, q.b);
     if(q.op === "×") return mulCarry(q.a, q.b);
-    return String(Math.floor(q.ans)).length < q.a.toString().length;
+    var qs = q.ans.toString();                 // BigInt: "24"；小数: "14.4"
+    var dot = qs.indexOf(".");
+    if(dot > -1) qs = qs.slice(0, dot);        // 按商的整数部分位数判断
+    return qs.length < q.a.toString().length;
   }
 
   function carryOk(q){
