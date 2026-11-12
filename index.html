@@ -82,6 +82,16 @@
 
   .setting{margin-bottom:16px}
   .setting:last-child{margin-bottom:0}
+  .digrow{display:flex;align-items:center;gap:7px}
+  .digrow .dtag{font-size:11px;color:var(--muted);flex:0 0 auto}
+  .digrow input[type=range]{flex:1;min-width:0}
+  .cnt-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .cnt{display:flex;align-items:center;gap:6px;border:1px solid var(--line-strong);border-radius:14px;padding:8px 10px}
+  .cnt span{font-size:16px;font-weight:600;flex:0 0 auto;width:24px;text-align:center}
+  .cnt input{flex:1;min-width:0;text-align:center;border:none;background:transparent;color:var(--text);
+    font-size:15px;font-weight:600;font-family:inherit;outline:none;-moz-appearance:textfield;appearance:textfield}
+  .cnt input::-webkit-inner-spin-button,.cnt input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+  .cnt em{font-style:normal;font-size:11px;color:var(--muted);flex:0 0 auto}
   .row{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:9px}
   .row span{font-size:13px;color:var(--muted)}
   .row b{font-size:13px;font-variant-numeric:tabular-nums}
@@ -318,7 +328,7 @@
       <button class="quick-btn" id="openStats"><b>📊</b><span>数据分析</span></button>
     </div>
 
-    <p class="hint" id="hintText">A、B 位数独立设置；除法保证整除，减法不出现负数</p>
+    <p class="hint" id="hintText">四种运算可分别设置位数与题数；除法可出小数商，减法不出现负数</p>
   </section>
 
   <!-- ============ 设置 ============ -->
@@ -340,14 +350,42 @@
     </div>
 
     <div class="card">
-      <div class="label">数字位数</div>
+      <div class="label">数字位数（每种运算单独设置）</div>
       <div class="setting">
-        <div class="row"><span>数字 A 位数</span><b id="digitsAVal">2 位</b></div>
-        <input type="range" id="digitsA" min="1" max="6" value="2">
+        <div class="row"><span>＋ 加法</span><b id="digValAdd">A 2 位 / B 2 位</b></div>
+        <div class="digrow">
+          <span class="dtag">A</span>
+          <input type="range" id="digAAdd" min="1" max="6" value="2">
+          <span class="dtag">B</span>
+          <input type="range" id="digBAdd" min="1" max="6" value="2">
+        </div>
+      </div>
+      <div class="setting">
+        <div class="row"><span>－ 减法</span><b id="digValSub">A 2 位 / B 2 位</b></div>
+        <div class="digrow">
+          <span class="dtag">A</span>
+          <input type="range" id="digASub" min="1" max="6" value="2">
+          <span class="dtag">B</span>
+          <input type="range" id="digBSub" min="1" max="6" value="2">
+        </div>
+      </div>
+      <div class="setting">
+        <div class="row"><span>× 乘法</span><b id="digValMul">A 2 位 / B 2 位</b></div>
+        <div class="digrow">
+          <span class="dtag">A</span>
+          <input type="range" id="digAMul" min="1" max="6" value="2">
+          <span class="dtag">B</span>
+          <input type="range" id="digBMul" min="1" max="6" value="2">
+        </div>
       </div>
       <div class="setting" style="margin-bottom:0">
-        <div class="row"><span>数字 B 位数</span><b id="digitsBVal">2 位</b></div>
-        <input type="range" id="digitsB" min="1" max="6" value="2">
+        <div class="row"><span>÷ 除法</span><b id="digValDiv">A 2 位 / B 2 位</b></div>
+        <div class="digrow">
+          <span class="dtag">A</span>
+          <input type="range" id="digADiv" min="1" max="6" value="2">
+          <span class="dtag">B</span>
+          <input type="range" id="digBDiv" min="1" max="6" value="2">
+        </div>
       </div>
     </div>
 
@@ -370,18 +408,17 @@
     <div class="card">
       <div class="label">题目与时间</div>
       <div class="setting">
-        <div class="row"><span>题目数量</span><b id="totalVal">10 题</b></div>
-        <div class="seg five" id="totalSeg">
-          <button data-v="10" class="on">10</button>
-          <button data-v="20">20</button>
-          <button data-v="30">30</button>
-          <button data-v="0">无限</button>
-          <button data-v="custom">自定义</button>
+        <div class="row"><span>各题型题数</span><b id="totalVal">合计 30 题</b></div>
+        <div class="cnt-grid">
+          <label class="cnt"><span>＋</span><input id="cntAdd" type="number" inputmode="numeric" min="0" max="999" step="1" value="10"><em>题</em></label>
+          <label class="cnt"><span>－</span><input id="cntSub" type="number" inputmode="numeric" min="0" max="999" step="1" value="10"><em>题</em></label>
+          <label class="cnt"><span>×</span><input id="cntMul" type="number" inputmode="numeric" min="0" max="999" step="1" value="10"><em>题</em></label>
+          <label class="cnt"><span>÷</span><input id="cntDiv" type="number" inputmode="numeric" min="0" max="999" step="1" value="10"><em>题</em></label>
         </div>
-        <div class="custom" id="totalCustom">
-          <input id="totalInput" type="number" inputmode="numeric" min="1" max="999" step="1" placeholder="输入题数，如 50">
-          <span>题</span>
-        </div>
+        <label class="switch" style="margin-top:12px">
+          <input type="checkbox" id="unlimited">
+          <span>无限模式（忽略题数，随机出题）</span>
+        </label>
       </div>
       <div class="setting">
         <div class="row"><span>每题限时</span><b id="limitVal">不限时</b></div>
@@ -559,9 +596,12 @@
     openSettings: $("openSettings"), settingsBack: $("settingsBack"), settingsDone: $("settingsDone"),
     heroSummary: $("heroSummary"), heroSub: $("heroSub"),
     opChips: $("opChips"),
-    digitsA: $("digitsA"), digitsAVal: $("digitsAVal"),
-    digitsB: $("digitsB"), digitsBVal: $("digitsBVal"),
-    totalSeg: $("totalSeg"), totalVal: $("totalVal"),
+    digAAdd: $("digAAdd"), digBAdd: $("digBAdd"), digValAdd: $("digValAdd"),
+    digASub: $("digASub"), digBSub: $("digBSub"), digValSub: $("digValSub"),
+    digAMul: $("digAMul"), digBMul: $("digBMul"), digValMul: $("digValMul"),
+    digADiv: $("digADiv"), digBDiv: $("digBDiv"), digValDiv: $("digValDiv"),
+    cntAdd: $("cntAdd"), cntSub: $("cntSub"), cntMul: $("cntMul"), cntDiv: $("cntDiv"),
+    unlimited: $("unlimited"), totalVal: $("totalVal"),
     limitSeg: $("limitSeg"), limitVal: $("limitVal"),
     startBtn: $("startBtn"), hint: $("hintText"),
     progressText: $("progressText"), timerText: $("timerText"),
@@ -580,7 +620,6 @@
     showCustom: $("showCustom"), showInput: $("showInput"), adaptShow: $("adaptShow"),
     adaptMin: $("adaptMin"), adaptMinVal: $("adaptMinVal"), adaptMinBox: $("adaptMinBox"),
     showHint: $("showHint"),
-    totalCustom: $("totalCustom"), totalInput: $("totalInput"),
     limitCustom: $("limitCustom"), limitInput: $("limitInput"),
     stRange: $("stRange"),
     stAcc: $("stAcc"), stSub: $("stSub"), stTotal: $("stTotal"), stAvg: $("stAvg"),
@@ -612,6 +651,8 @@
     reviewMode: "all",
     cur: null, locked: true, qid: 0, t0: 0, tick: null, startAt: 0
   };
+
+  var opsOrder = ["+", "−", "×", "÷"];   // 运算符固定顺序
 
   var TEN = BigInt(10);
   function p10(n){ return TEN ** BigInt(n); }
@@ -749,6 +790,33 @@
     return q;
   }
 
+  // 按各题型题数预铺整套题，洗牌后逐题生成（保证每套题各类型数量精确）
+  function buildQueue(){
+    var ops = [], i, j, k;
+    for(i = 0; i < opsOrder.length; i++){
+      if(S.ops.indexOf(opsOrder[i]) >= 0 && S.cnt[opsOrder[i]] > 0) ops.push(opsOrder[i]);
+    }
+    var list = [];
+    for(i = 0; i < ops.length; i++){
+      for(j = 0; j < S.cnt[ops[i]]; j++) list.push(ops[i]);
+    }
+    if(!list.length) return null;
+    for(k = list.length - 1; k > 0; k--){
+      var x = rnd(k + 1), t = list[k];
+      list[k] = list[x]; list[x] = t;
+    }
+    var qs = [];
+    for(k = 0; k < list.length; k++){
+      var q, tries = 0;
+      do {
+        q = genRawFor(list[k]);
+        tries++;
+      } while(!carryOk(q) && tries < 200);
+      qs.push(q);
+    }
+    return qs;
+  }
+
   // 乘法：按进位要求构造，保证直接命中
   function genMul(da, db, mode){
     var i, sa = "", sb = "";
@@ -772,7 +840,12 @@
 
   function genRaw(){
     var op = S.ops[rnd(S.ops.length)];
-    var da = S.da, db = S.db;
+    return genRawFor(op);
+  }
+
+  // 按指定算子 + 该算子各自的位数出题
+  function genRawFor(op){
+    var da = S.dg[op].a, db = S.dg[op].b;
     var a, b, ans;
 
     if(op === "×" && S.carry) return genMul(da, db, S.carry);
@@ -816,7 +889,16 @@
   function startRun(queue){
     if(!S.ops.length && !queue){ toast("请至少选择一个算子"); return; }
     S.i = 0; S.ok = 0; S.bad = 0; S.streak = 0; S.maxStreak = 0;
-    S.times = []; S.wrong = []; S.queue = queue || null;
+    S.times = []; S.wrong = [];
+    if(queue){
+      S.queue = queue;
+    } else if(S.unlimited){
+      S.queue = null;                    // 无限模式：随机出题
+    } else {
+      var qs = buildQueue();             // 按各题型题数铺好整套题
+      if(!qs){ toast("请设置各题型题数（至少一种 > 0）"); return; }
+      S.queue = qs;
+    }
     S.startAt = Date.now();
     S.log = [];
     S.reviewMode = "all";
@@ -1046,25 +1128,40 @@
     var idx = S.ops.indexOf(op);
     if(idx >= 0){ S.ops.splice(idx, 1); btn.classList.remove("on"); }
     else { S.ops.push(op); btn.classList.add("on"); }
+    refreshTotal();
     updateHint();
   });
+
+  function digitsText(){
+    var sel = [];
+    for(var i = 0; i < opsOrder.length; i++){
+      if(S.ops.indexOf(opsOrder[i]) >= 0) sel.push(opsOrder[i]);
+    }
+    if(!sel.length) return "未设位数";
+    var same = true, d0 = S.dg[sel[0]];
+    for(var j = 1; j < sel.length; j++){
+      if(S.dg[sel[j]].a !== d0.a || S.dg[sel[j]].b !== d0.b){ same = false; break; }
+    }
+    if(same) return "A " + d0.a + " 位 / B " + d0.b + " 位";
+    return sel.map(function(op){ return op + S.dg[op].a + "/" + S.dg[op].b; }).join(" ");
+  }
 
   function updateSummary(){
     if(!els.heroSummary) return;
     els.heroSummary.textContent = S.ops.length ? S.ops.join(" ") : "未选择算子";
     var bits = [];
-    bits.push(S.total ? S.total + " 题" : "无限题");
+    bits.push(S.unlimited ? "无限题" : S.total + " 题");
     bits.push(S.limit ? S.limit + " 秒/题" : "不限时");
     bits.push(S.showMs ? "显示 " + S.showMs + "ms" + (S.adaptShow ? "·自适应" : "") : "算式常显");
     if(S.carry === 1) bits.push("必须进位");
     if(S.carry === 2) bits.push("禁止进位");
-    els.heroSub.textContent = "A " + S.da + " 位 / B " + S.db + " 位 · " + bits.join(" · ");
+    els.heroSub.textContent = digitsText() + " · " + bits.join(" · ");
   }
 
   function updateHint(){
     if(!S.ops.length){ els.hint.textContent = "⚠ 请至少选择一个算子"; return; }
-    var t = "出题规则：" + S.ops.join(" ") + " · A " + S.da + " 位 / B " + S.db + " 位";
-    if(S.ops.indexOf("÷") >= 0) t += " · 除法保证整除";
+    var t = "出题规则：" + S.ops.join(" ") + " · " + digitsText();
+    if(S.ops.indexOf("÷") >= 0) t += " · 除法可出小数商";
     if(S.ops.indexOf("−") >= 0) t += " · 减法不出现负数";
     if(S.carry === 1) t += " · 每题必定进位/借位";
     if(S.carry === 2) t += " · 每题不含进位/借位";
@@ -1080,18 +1177,23 @@
     node.style.setProperty("--p", ((v - min) / (max - min) * 100) + "%");
   }
 
-  els.digitsA.addEventListener("input", function(){
-    S.da = +els.digitsA.value;
-    els.digitsAVal.textContent = S.da + " 位";
-    setFill(els.digitsA);
+  function applyDig(op, which, v, node, label){
+    v = Math.max(1, Math.min(6, Math.floor(v)));
+    S.dg[op][which] = v;
+    label.textContent = "A " + S.dg[op].a + " 位 / B " + S.dg[op].b + " 位";
+    setFill(node);
     updateHint();
-  });
+  }
 
-  els.digitsB.addEventListener("input", function(){
-    S.db = +els.digitsB.value;
-    els.digitsBVal.textContent = S.db + " 位";
-    setFill(els.digitsB);
-    updateHint();
+  var digCfg = [
+    ["+", "digAAdd", "digBAdd", "digValAdd"],
+    ["−", "digASub", "digBSub", "digValSub"],
+    ["×", "digAMul", "digBMul", "digValMul"],
+    ["÷", "digADiv", "digBDiv", "digValDiv"]
+  ];
+  digCfg.forEach(function(c){
+    els[c[1]].addEventListener("input", function(){ applyDig(c[0], "a", +els[c[1]].value, els[c[1]], els[c[3]]); });
+    els[c[2]].addEventListener("input", function(){ applyDig(c[0], "b", +els[c[2]].value, els[c[2]], els[c[3]]); });
   });
 
   function pickSeg(seg, btn){
@@ -1100,30 +1202,37 @@
     btn.classList.add("on");
   }
 
-  function applyTotal(v){
-    if(isNaN(v) || v < 0) v = 0;
-    if(v > 999) v = 999;
-    S.total = Math.floor(v);
-    els.totalVal.textContent = S.total ? S.total + " 题" : "无限";
+  function totalFromCnt(){
+    if(S.unlimited) return 0;
+    var sum = 0;
+    for(var i = 0; i < opsOrder.length; i++){
+      var op = opsOrder[i];
+      if(S.ops.indexOf(op) >= 0) sum += (S.cnt[op] || 0);
+    }
+    return sum;
+  }
+
+  function refreshTotal(){
+    S.total = totalFromCnt();
+    els.totalVal.textContent = S.unlimited ? "无限" : (S.total ? "合计 " + S.total + " 题" : "合计 0 题");
     updateSummary();
   }
 
-  els.totalSeg.addEventListener("click", function(e){
-    var b = e.target.closest("button[data-v]");
-    if(!b) return;
-    pickSeg(els.totalSeg, b);
-    if(b.getAttribute("data-v") === "custom"){
-      els.totalCustom.classList.add("show");
-      els.totalInput.focus();
-      if(els.totalInput.value !== "") applyTotal(parseInt(els.totalInput.value, 10));
-      return;
-    }
-    els.totalCustom.classList.remove("show");
-    applyTotal(+b.getAttribute("data-v"));
+  function applyCnt(op, v){
+    if(isNaN(v) || v < 0) v = 0;
+    if(v > 999) v = 999;
+    S.cnt[op] = Math.floor(v);
+    refreshTotal();
+  }
+
+  var cntCfg = [["+", "cntAdd"], ["−", "cntSub"], ["×", "cntMul"], ["÷", "cntDiv"]];
+  cntCfg.forEach(function(c){
+    els[c[1]].addEventListener("input", function(){ applyCnt(c[0], parseInt(els[c[1]].value, 10) || 0); });
   });
 
-  els.totalInput.addEventListener("input", function(){
-    applyTotal(parseInt(els.totalInput.value, 10) || 0);
+  els.unlimited.addEventListener("change", function(){
+    S.unlimited = els.unlimited.checked;
+    refreshTotal();
   });
 
   function applyLimit(v){
@@ -1561,12 +1670,15 @@
       document.documentElement.setAttribute("data-theme", "light");
       els.themeBtn.textContent = "☀️";
     }
-    S.da = +els.digitsA.value;
-    S.db = +els.digitsB.value;
-    els.digitsAVal.textContent = S.da + " 位";
-    els.digitsBVal.textContent = S.db + " 位";
-    setFill(els.digitsA);
-    setFill(els.digitsB);
+    digCfg.forEach(function(c){
+      S.dg[c[0]].a = +els[c[1]].value;
+      S.dg[c[0]].b = +els[c[2]].value;
+      els[c[3]].textContent = "A " + S.dg[c[0]].a + " 位 / B " + S.dg[c[0]].b + " 位";
+      setFill(els[c[1]]);
+      setFill(els[c[2]]);
+    });
+    els.unlimited.checked = S.unlimited;
+    refreshTotal();
     setFill(els.divTol);
     setFill(els.adaptMin);
     loadRecords();
