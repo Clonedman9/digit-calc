@@ -166,6 +166,13 @@
     box-shadow:var(--shadow);transition:border-color .2s,box-shadow .2s;
   }
   html[data-theme="light"] .qcard{background:linear-gradient(160deg,#f8faff,#fff)}
+  .q-mark{position:absolute;top:10px;right:14px;font-size:30px;font-weight:800;line-height:1;
+    opacity:0;color:var(--muted);transition:opacity .15s;pointer-events:none}
+  .qcard.good{border-color:var(--ok)}
+  .qcard.bad{border-color:var(--bad)}
+  .qcard.good .q-mark,.qcard.bad .q-mark,.qcard.skip .q-mark{opacity:1}
+  .qcard.good .q-mark{color:var(--ok)}
+  .qcard.bad .q-mark{color:var(--bad)}
   .q-expr{
     font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
     font-size:34px;font-weight:600;letter-spacing:.5px;line-height:1.2;
@@ -474,6 +481,7 @@
       <div class="q-expr" id="qExpr">—</div>
       <input id="answer" type="text" inputmode="none" autocomplete="off" spellcheck="false"
              maxlength="24" placeholder="输入答案" readonly>
+      <div class="q-mark" id="qMark"></div>
     </div>
 
     <div class="keypad" id="keypad">
@@ -605,7 +613,7 @@
     limitSeg: $("limitSeg"), limitVal: $("limitVal"),
     startBtn: $("startBtn"), hint: $("hintText"),
     progressText: $("progressText"), timerText: $("timerText"),
-    progressBar: $("progressBar"), qcard: $("qcard"), qExpr: $("qExpr"),
+    progressBar: $("progressBar"), qcard: $("qcard"), qExpr: $("qExpr"), qMark: $("qMark"),
     answer: $("answer"), keypad: $("keypad"),
     skipBtn: $("skipBtn"), submitBtn: $("submitBtn"), quitBtn: $("quitBtn"),
     reviewSeg: $("reviewSeg"), reviewList: $("reviewList"),
@@ -929,7 +937,8 @@
     var q = S.queue ? S.queue[S.i] : genQuestion();
     S.cur = q;
 
-    els.qcard.classList.remove("good", "bad");
+    els.qcard.classList.remove("good", "bad", "skip");
+    els.qMark.textContent = "";
     els.qExpr.classList.remove("hidden");
     els.qExpr.textContent = exprText(q);
     els.answer.value = "";
@@ -1053,9 +1062,27 @@
       S.curShow = Math.max(floor, Math.min(cap, nx));
     }
 
-    // 不显示对错，立刻进入下一题
-    S.i++;
-    nextQuestion();
+    // 显示对错反馈，短暂停留后自动进入下一题
+    els.qcard.classList.remove("good", "bad", "skip");
+    els.qMark.textContent = "";
+    if(correct){
+      els.qcard.classList.add("good");
+      els.qMark.textContent = "✓";
+    } else if(timeout){
+      els.qcard.classList.add("bad");
+      els.qMark.textContent = "⏱";
+    } else if(userRaw === null){
+      els.qcard.classList.add("skip");
+      els.qMark.textContent = "—";
+    } else {
+      els.qcard.classList.add("bad");
+      els.qMark.textContent = "✗";
+    }
+    setTimeout(function(){
+      if(!els.drill.classList.contains("active")) return;   // 已结束/退出则不再换题
+      S.i++;
+      nextQuestion();
+    }, 650);
   }
 
   /* ---------------- 作答回顾 ---------------- */
