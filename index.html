@@ -187,6 +187,7 @@
   .key:hover{border-color:var(--accent)}
   .key:active{transform:scale(.95);background:rgba(124,108,255,.2);border-color:var(--accent)}
   .key.fn{font-size:15px;font-weight:500;color:var(--muted);font-family:inherit}
+  .key.wide{grid-column:span 3}
 
   .statline{display:flex;justify-content:space-around;align-items:center;margin-top:14px;font-size:12.5px;color:var(--muted)}
   .statline b{font-size:15px;font-variant-numeric:tabular-nums}
@@ -450,7 +451,8 @@
       <button class="key" data-k="9">9</button>
       <button class="key fn" data-k="back">⌫</button>
       <button class="key" data-k="0">0</button>
-      <button class="key fn" data-k="clear">清空</button>
+      <button class="key" data-k=".">.</button>
+      <button class="key fn wide" data-k="clear">清空</button>
     </div>
 
     <div class="actions">
@@ -639,12 +641,39 @@
     if(cap < hiB) hiB = cap;
     var strict = hiB >= loB;
     var b = strict ? randBetween(loB, hiB) : randBig(bd);
+    // 随机出小数商：约 5 成概率尝试“商为一位小数”的题（如 72 ÷ 5 = 14.4）
+    if(rnd(10) < 5){
+      var rd = tryDivDec(dd, b);
+      if(rd) return rd;
+    }
     var lo = p10(dd - 1) / b + BigInt(1);
     var hi = (p10(dd) - BigInt(1)) / b;
     if(strict && hi >= BigInt(2) && lo < BigInt(2)) lo = BigInt(2);
     if(hi < lo) return null;
     var q = randBetween(lo, hi);
     return { a: b * q, b: b, ans: q };
+  }
+
+  // 出“商为一位小数”的题：a ÷ b = q，q = m / g（g = gcd(b, 10)）。
+  // 除数含因子 2 或 5 时商才可能是有限小数；a = m * (b / g) 恒为整数。
+  function tryDivDec(dd, b){
+    var g = BigInt(1);
+    if(b % BigInt(2) === BigInt(0)) g *= BigInt(2);
+    if(b % BigInt(5) === BigInt(0)) g *= BigInt(5);
+    if(g === BigInt(1)) return null;                 // 与 10 互质 → 商只能是整数
+    var step = b / g;                                // 被除数必须是 step 的倍数
+    var loA = p10(dd - 1), hiA = p10(dd) - BigInt(1);
+    var loM = (loA + step - BigInt(1)) / step;       // 向上取整，保证被除数位数
+    var hiM = hiA / step;
+    if(loM < BigInt(2) * g) loM = BigInt(2) * g;     // 商 >= 2，避免无意义题
+    if(hiM < loM) return null;
+    for(var i = 0; i < 20; i++){
+      var m = randBetween(loM, hiM);
+      if(m % g !== BigInt(0)){                       // 确保商带小数部分（真小数）
+        return { a: m * step, b: b, ans: Number(m) / Number(g) };
+      }
+    }
+    return null;                                     // 没抽到合适的 m，退回整数商
   }
 
   function makeDiv(da, db){
@@ -703,7 +732,7 @@
     if(q.op === "+") return addCarry(q.a, q.b);
     if(q.op === "−") return subBorrow(q.a, q.b);
     if(q.op === "×") return mulCarry(q.a, q.b);
-    return q.ans.toString().length < q.a.toString().length;
+    return String(Math.floor(q.ans)).length < q.a.toString().length;
   }
 
   function carryOk(q){
@@ -868,17 +897,23 @@
     if(S.locked) return;
     var raw = els.answer.value.trim().replace(/[,\s]/g, "");
     if(raw === ""){ return; }
-    if(!/^\d+$/.test(raw)){ return; }
-    var val;
-    try{ val = BigInt(raw); }catch(e){ return; }
+    if(!/^\d+(\.\d+)?$/.test(raw)){ return; }            // 整数或小数
     var q = S.cur;
-    var exact = val === q.ans;
-    var approx = false;
-    if(!exact && q.op === "÷" && S.divTol > 0 && q.ans !== BigInt(0)){
-      var ref = q.ans < BigInt(0) ? -q.ans : q.ans;
-      var diff = val > q.ans ? val - q.ans : q.ans - val;
-      var bp = BigInt(Math.round(S.divTol * 100));       // 百分比 -> 万分比
-      if(diff * BigInt(10000) <= ref * bp){ exact = true; approx = true; }
+    var exact = false, approx = false;
+    if(q.op === "÷"){
+      // 商可能是小数（如 14.4），统一用数值比较
+      var val = parseFloat(raw);
+      if(!isFinite(val)) return;
+      var ref = Number(q.ans);
+      var diff = Math.abs(val - ref);
+      exact = diff <= 1e-9;                              // 浮点极小误差视为相等
+      if(!exact && S.divTol > 0 && ref > 0){
+        if(diff <= ref * (S.divTol / 100)){ exact = true; approx = true; }  // 百分比容差
+      }
+    } else {
+      var bval;
+      try{ bval = BigInt(raw); }catch(e){ return; }
+      exact = bval === q.ans;
     }
     resolve(exact, raw, false, approx);
   }
@@ -1127,7 +1162,11 @@
     var v = els.answer.value;
     if(k === "back"){ els.answer.value = v.slice(0, -1); }
     else if(k === "clear"){ els.answer.value = ""; }
-    else if(v.length < 24){ els.answer.value = v + k; }
+    else if(v.length < 24){
+      // 小数点：不能开头、不能重复
+      if(k === "." && (v === "" || v.indexOf(".") > -1)) return true;
+      els.answer.value = v + k;
+    }
     return true;
   }
 
@@ -1176,7 +1215,7 @@
       var m = w.expr.match(/^(\d+)\s+([+\-−×÷])\s+(\d+)\s*=/);
       if(!m) return null;
       var a = BigInt(m[1]), b = BigInt(m[3]), op = m[2];
-      var ans = op === "+" ? a + b : op === "−" ? a - b : op === "×" ? a * b : a / b;
+      var ans = op === "+" ? a + b : op === "−" ? a - b : op === "×" ? a * b : Number(a) / Number(b);
       return { a: a, b: b, op: op, ans: ans };
     }).filter(Boolean);
     if(!qs.length){ toast("没有可重练的错题"); return; }
@@ -1191,6 +1230,9 @@
       if(els.answer.value.length < 24) els.answer.value += e.key;
     } else if(e.key === "Backspace"){
       els.answer.value = els.answer.value.slice(0, -1);
+    } else if(e.key === "."){
+      var v = els.answer.value;
+      if(v !== "" && v.indexOf(".") === -1 && v.length < 24) els.answer.value = v + ".";
     } else if(e.key === "Enter"){
       submit();
     } else if(e.key === "Escape"){
