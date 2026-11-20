@@ -676,18 +676,15 @@
 
   // 同 randBig，但保证不等于 1：乘法里出现 a×1 / 1×b 没有练习价值
   function randBigNoOne(n){
-    var v = randBig(n);
-    for(var i = 0; i < 8 && v === BigInt(1); i++) v = randBig(n);
+    var v;
+    do { v = randBig(n); } while(v === BigInt(1));
     return v;
   }
 
+  // 位数上限为 6，范围可直接用 Number 均匀抽样，避免取模造成的大幅偏差。
   function randBetween(lo, hi){
-    var range = hi - lo + BigInt(1);
-    if(range <= BigInt(0)) return lo;
-    var len = range.toString().length + 3;
-    var s = String(1 + rnd(9));
-    for(var i = 1; i < len; i++) s += String(rnd(10));
-    return lo + (BigInt(s) % range);
+    var range = Number(hi - lo + BigInt(1));
+    return range > 0 ? lo + BigInt(rnd(range)) : lo;
   }
 
   /* ---------------- 出题（A/B 位数独立） ---------------- */
@@ -698,7 +695,8 @@
     var cap = (p10(dd) - BigInt(1)) / BigInt(2);      // 让商 >= 2，避免出现 x ÷ x = 1
     if(cap < hiB) hiB = cap;
     var strict = hiB >= loB;
-    var b = strict ? randBetween(loB, hiB) : randBig(bd);
+    if(!strict) return null; // 不允许交换 A/B 或突破已选位数
+    var b = randBetween(loB, hiB);
     // 随机出小数商：约 5 成概率尝试“商为一位小数”的题（如 72 ÷ 5 = 14.4）
     if(rnd(10) < 5){
       var rd = tryDivDec(dd, b);
@@ -735,11 +733,8 @@
   }
 
   function makeDiv(da, db){
-    var r = tryDiv(da, db) || tryDiv(db, da);
-    if(r) return r;
-    var b2 = randBigNoOne(Math.max(da, db));           // 极端组合兜底（除数不为 1）
-    if(b2 < BigInt(2)) b2 = BigInt(2);
-    return { a: b2 * BigInt(2), b: b2, ans: BigInt(2) };
+    if(da < db) return null;
+    return tryDiv(da, db);
   }
 
   function digitsOf(n){
@@ -802,13 +797,53 @@
     return S.carry === 1 ? carryInfo(q) : !carryInfo(q);
   }
 
+  function genForMode(op){
+    if(!isConfigValid(op)) return null;
+    var q = null;
+    for(var tries = 0; tries < 2000; tries++){
+      q = genRawFor(op);
+      if(q && carryOk(q)) return q;
+    }
+    return null;
+  }
+
   function genQuestion(){
-    var q, tries = 0;
-    do {
-      q = genRaw();
-      tries++;
-    } while(!carryOk(q) && tries < 200);
-    return q;
+    if(!S.ops.length) return null;
+    var candidates = S.ops.filter(function(op){ return isConfigValid(op); });
+    if(!candidates.length) return null;
+    // 先跳过不可能的配置，避免无限模式在无效算子中反复空转。
+    for(var i = 0; i < 20; i++){
+      var q = genForMode(candidates[rnd(candidates.length)]);
+      if(q) return q;
+    }
+    // 随机选中暂未命中的算子时，逐个尝试，避免低概率配置导致练习中断。
+    for(var j = 0; j < candidates.length; j++){
+      var fallback = genForMode(candidates[j]);
+      if(fallback) return fallback;
+    }
+    return null;
+  }
+
+  function isConfigValid(op){
+    var d = S.dg[op];
+    if((op === "−" || op === "÷") && d.a < d.b) return false;
+    // 商至少为 2 且除数至少为 2，所以商必然少于被除数位数。
+    if(op === "÷" && (S.carry === 2 || (S.carry === 1 && d.a === 1 && d.b === 1))) return false;
+    if(op === "−" && d.a === 1 && d.b === 1 && S.carry === 1) return false;
+    return true;
+  }
+
+  function validateQueueOps(list){
+    for(var i = 0; i < list.length; i++){
+      if(!isConfigValid(list[i])){
+        var op = list[i], d = S.dg[op];
+        if((op === "−" || op === "÷") && d.a < d.b)
+          return op + "：当前规则下 A 位数不能小于 B 位数，请调整位数";
+        if(op === "÷") return "÷：当前位数与退位规则无可用题目，请调整设置";
+        return "−：两个一位非负数相减不可能借位，请调整规则";
+      }
+    }
+    return "";
   }
 
   // 按各题型题数预铺整套题，洗牌后逐题生成（保证每套题各类型数量精确）
@@ -826,13 +861,12 @@
       var x = rnd(k + 1), t = list[k];
       list[k] = list[x]; list[x] = t;
     }
+    var invalid = validateQueueOps(list);
+    if(invalid) return { error: invalid };
     var qs = [];
     for(k = 0; k < list.length; k++){
-      var q, tries = 0;
-      do {
-        q = genRawFor(list[k]);
-        tries++;
-      } while(!carryOk(q) && tries < 200);
+      var q = genForMode(list[k]);
+      if(!q) return { error: list[k] + "：当前位数与进位/借位规则无可用题目，请调整设置" };
       qs.push(q);
     }
     return qs;
@@ -890,7 +924,7 @@
       a = randBig(da); b = randBig(db); ans = a + b;
     } else if(op === "−"){
       a = randBig(da); b = randBig(db);
-      if(a < b){ var t = a; a = b; b = t; }          // 保证结果非负
+      if(a < b) return null;              // 不交换 A/B；调用方按所选位数重新抽样
       if(a === b){
         // a == b 不能出 a−a=0：优先把 a 加一；加一会涨位时改把 b 减一，都不许丢位数
         var a2 = a + BigInt(1), b2 = b - BigInt(1);
@@ -935,10 +969,12 @@
     if(queue){
       S.queue = queue;
     } else if(S.unlimited){
+      if(!S.ops.some(isConfigValid)){ toast("当前算子与位数、进位规则无可用题目，请调整设置"); return; }
       S.queue = null;                    // 无限模式：随机出题
     } else {
       var qs = buildQueue();             // 按各题型题数铺好整套题
       if(!qs){ toast("请设置各题型题数（至少一种 > 0）"); return; }
+      if(qs.error){ toast(qs.error); return; }
       S.queue = qs;
     }
     S.startAt = Date.now();
@@ -966,6 +1002,7 @@
     S.locked = false;
     S.qid++;
     var q = S.queue ? S.queue[S.i] : genQuestion();
+    if(!q){ toast("当前设置无可用题目，请调整位数或进位规则"); show("home"); S.locked = true; return; }
     S.cur = q;
 
     els.qcard.classList.remove("good", "bad", "skip");
@@ -1106,22 +1143,9 @@
       S.curShow = Math.max(floor, Math.min(cap, nx));
     }
 
-    // 显示对错反馈，短暂停留后自动进入下一题
+    // 答题中不显示对错反馈，保持盲测；结算页统一回顾。
     els.qcard.classList.remove("good", "bad", "skip");
     els.qMark.textContent = "";
-    if(correct){
-      els.qcard.classList.add("good");
-      els.qMark.textContent = "✓";
-    } else if(timeout){
-      els.qcard.classList.add("bad");
-      els.qMark.textContent = "⏱";
-    } else if(userRaw === null){
-      els.qcard.classList.add("skip");
-      els.qMark.textContent = "—";
-    } else {
-      els.qcard.classList.add("bad");
-      els.qMark.textContent = "✗";
-    }
     setTimeout(function(){
       if(!els.drill.classList.contains("active")) return;   // 已结束/退出则不再换题
       S.i++;
@@ -1164,7 +1188,8 @@
   function fmtTime(sec){
     if(sec == null || !isFinite(sec)) return "—";
     if(sec < 60) return sec.toFixed(1) + "s";
-    return Math.floor(sec / 60) + "m" + Math.round(sec % 60) + "s";
+    var whole = Math.round(sec);
+    return Math.floor(whole / 60) + "m" + (whole % 60) + "s";
   }
 
   function finish(){
@@ -1313,6 +1338,7 @@
   function applyLimit(v){
     if(isNaN(v) || v < 0) v = 0;
     if(v > 600) v = 600;
+    if(v > 0 && v < 1) v = 1;
     v = Math.round(v * 10) / 10;
     S.limit = v;
     els.limitVal.textContent = v ? v + " 秒" : "不限时";
@@ -1456,9 +1482,10 @@
 
   function fmtDur(sec){
     if(!sec) return "0s";
-    if(sec < 60) return Math.round(sec) + "s";
-    if(sec < 3600) return Math.floor(sec / 60) + "m" + Math.round(sec % 60) + "s";
-    return Math.floor(sec / 3600) + "h" + Math.round((sec % 3600) / 60) + "m";
+    var whole = Math.round(sec);
+    if(sec >= 3600) return Math.floor(sec / 3600) + "h" + Math.round((sec % 3600) / 60) + "m";
+    if(whole < 60) return whole + "s";
+    return Math.floor(whole / 60) + "m" + (whole % 60) + "s";
   }
 
   function statRow(name, okN, total, avgSec){
@@ -1631,6 +1658,7 @@
   function applyShow(v){
     if(isNaN(v) || v < 0) v = 0;
     if(v > 60000) v = 60000;
+    if(v > 0 && v < 50) v = 50;
     S.showMs = Math.round(v);
     els.showVal.textContent = S.showMs ? S.showMs + " ms" : "不限";
     // 显示时长回到「不限」时自适应无法运行；同步状态与界面，避免「开关看着是开、其实没跑」
@@ -1741,21 +1769,28 @@
 
   els.stExport.addEventListener("click", function(){
     if(!S.records.length){ toast("还没有数据"); return; }
+    var from = rangeStart();
+    var records = S.records.filter(function(r){ return r.t >= from; });
+    if(!records.length){ toast("当前范围内还没有数据"); return; }
     var rows = [["时间", "算子", "A位数", "B位数", "进位", "是否正确", "用时(秒)"]];
-    for(var i = 0; i < S.records.length; i++){
-      var r = S.records[i];
+    for(var i = 0; i < records.length; i++){
+      var r = records[i];
       rows.push([new Date(r.t).toLocaleString(), r.op, r.la, r.lb,
                  r.carry ? "有" : "无", r.ok ? "对" : "错", r.sec]);
     }
-    var csv = "\ufeff" + rows.map(function(x){ return x.join(","); }).join("\n");
+    var csv = "\ufeff" + rows.map(function(x){
+      return x.map(function(cell){ return '"' + String(cell).replace(/"/g, '""') + '"'; }).join(",");
+    }).join("\n");
     var blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     var link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
+    var url = URL.createObjectURL(blob);
+    link.href = url;
     link.download = "math-drill-" + new Date().toISOString().slice(0, 10) + ".csv";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast("已导出 CSV");
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    toast("已导出当前范围的 " + records.length + " 条记录");
   });
 
   /* ---------------- 初始化 ---------------- */
