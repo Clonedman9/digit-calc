@@ -1,6 +1,8 @@
 (function(){
   "use strict";
 
+  var Core = window.DigitCalcCore;
+
   var $ = function(id){ return document.getElementById(id); };
   var els = {
     home: $("homeView"), setup: $("setupView"), drill: $("drillView"), done: $("doneView"),
@@ -59,17 +61,21 @@
     stRange: "all",    // 统计范围 all / 7 / 1
     records: [],       // 每题的作答记录，用于数据分析
     i: 0, ok: 0, bad: 0, streak: 0, maxStreak: 0,
-    times: [], wrong: [], log: [], queue: null,
+    timeTotal: 0, timeCount: 0, fastest: Infinity, wrong: [], log: [], queue: null,
+    reviewBuffer: null, reviewLimit: 2000, nextTimer: null, deadlineTimer: null, hideAt: 0,
     reviewMode: "all",
-    cur: null, locked: true, qid: 0, t0: 0, tick: null, startAt: 0
+    cur: null, locked: true, qid: 0, t0: 0, tick: null, startClock: 0
   };
 
-  var opsOrder = ["+", "−", "×", "÷"];   // 运算符固定顺序
+  var opsOrder = Core.OPS;   // 运算符固定顺序
   var ADAPT_BASE = 2000;                  // 自适应兜底基准（显示时长设为「不限」时用）
 
   // Presentation state stays separate from the question engine.
   var UI = {
-    ready: false,
+    ready: false, selectionButtons: Array.from(document.querySelectorAll(".chip, .seg button[data-v]")),
+    operationRows: Array.from(document.querySelectorAll(".operation-setting")),
+    recordsVersion: 0, statsCache: new Map(), lastStatsRender: null, reviewRows: [], reviewCursor: 0,
+    reviewNote: $("reviewNote"),
     nav: { home: $("navHome"), setup: $("navSetup"), stats: $("navStats") },
     title: $("pageTitle"), progress: $("runProgress"),
     count: $("homeQuestionCount"), countUnit: $("homeQuestionUnit"),
@@ -78,15 +84,40 @@
     averageUnit: $("homeAverageUnit"), today: $("homeToday"), date: $("todayLabel")
   };
 
+  var persistence = {
+    settingsTimer: null, recordsTimer: null, settingsJSON: null, recordsDirty: false
+  };
+
   function saveSettings(){
+    clearTimeout(persistence.settingsTimer);
+    persistence.settingsTimer = null;
     if(!UI.ready) return;
     try{
-      localStorage.setItem("drill.settings.v1", JSON.stringify({
+      var value = JSON.stringify({
         ops: S.ops, dg: S.dg, cnt: S.cnt, unlimited: S.unlimited,
         limit: S.limit, carry: S.carry, divTol: S.divTol,
         showMs: S.showMs, adaptShow: S.adaptShow, adaptMin: S.adaptMin
-      }));
+      });
+      if(value === persistence.settingsJSON) return;
+      localStorage.setItem("drill.settings.v1", value);
+      persistence.settingsJSON = value;
     }catch(e){}
+  }
+
+  function scheduleSettingsSave(){
+    if(!UI.ready) return;
+    clearTimeout(persistence.settingsTimer);
+    persistence.settingsTimer = setTimeout(saveSettings, 180);
+  }
+
+  function scheduleRecordsSave(){
+    persistence.recordsDirty = true;
+    if(persistence.recordsTimer === null) persistence.recordsTimer = setTimeout(saveRecords, 500);
+  }
+
+  function flushPersistence(){
+    saveSettings();
+    saveRecords();
   }
 
   function loadSettings(){
@@ -113,10 +144,11 @@
   }
 
   function syncSelectionA11y(){
-    document.querySelectorAll(".chip, .seg button[data-v]").forEach(function(btn){
-      btn.setAttribute("aria-pressed", String(btn.classList.contains("on")));
+    UI.selectionButtons.forEach(function(btn){
+      var value = String(btn.classList.contains("on"));
+      if(btn.getAttribute("aria-pressed") !== value) btn.setAttribute("aria-pressed", value);
     });
-    document.querySelectorAll(".operation-setting").forEach(function(row){
+    UI.operationRows.forEach(function(row){
       row.classList.toggle("inactive", S.ops.indexOf(row.getAttribute("data-operation")) < 0);
     });
   }
@@ -134,15 +166,33 @@
     });
   }
 
+  function markStatsDirty(){
+    UI.recordsVersion++;
+    UI.statsCache.clear();
+    UI.lastStatsRender = null;
+  }
+
+  function getStats(range){
+    var now = Date.now(), key = UI.recordsVersion + ":" + range + ":" + Core.dayKey(now);
+    var cached = UI.statsCache.get(key);
+    if(cached && now < cached.expires) return cached.stats;
+    var stats = Core.aggregateRecords(S.records, Core.rangeStart(range, now), now);
+    var midnight = new Date(now); midnight.setHours(24, 0, 0, 0);
+    var expires = midnight.getTime();
+    // A rolling seven-day cache expires exactly after its earliest included record ages out.
+    if(range === "7" && stats.records.length) expires = Math.min(expires, stats.records[0].t + 7 * 86400000 + 1);
+    if(UI.statsCache.size >= 3 && !UI.statsCache.has(key)) UI.statsCache.clear();
+    UI.statsCache.set(key, { stats: stats, expires: expires });
+    return stats;
+  }
+
   function renderHomeStats(){
-    var records = S.records || [], n = records.length, good = 0, sec = 0, today = 0;
-    var start = new Date(); start.setHours(0, 0, 0, 0);
-    records.forEach(function(r){ good += r.ok; sec += r.sec; if(r.t >= start.getTime()) today++; });
-    UI.total.textContent = String(n);
-    UI.accuracy.textContent = n ? Math.round(good / n * 100) + "%" : "—";
-    UI.average.textContent = n ? (sec / n).toFixed(1) : "—";
-    UI.averageUnit.textContent = n ? "秒" : "";
-    UI.today.textContent = today ? "今天已练习 " + today + " 题" : "今天还未开始";
+    var stats = getStats("all"), today = stats.byDay.get(Core.dayKey(Date.now()));
+    UI.total.textContent = String(stats.n);
+    UI.accuracy.textContent = stats.n ? Math.round(stats.ok / stats.n * 100) + "%" : "—";
+    UI.average.textContent = stats.n ? (stats.sec / stats.n).toFixed(1) : "—";
+    UI.averageUnit.textContent = stats.n ? "秒" : "";
+    UI.today.textContent = today && today.n ? "今天已练习 " + today.n + " 题" : "今天还未开始";
   }
 
   function syncPresetControls(seg, value, custom, input){
@@ -189,295 +239,25 @@
     if(!els.drill.classList.contains("active")) return;
     els.qExpr.style.fontSize = "";
     var width = els.qExpr.clientWidth, natural = els.qExpr.scrollWidth;
+    if(!width) return;
     if(natural > width && width > 0){
       var size = parseFloat(window.getComputedStyle(els.qExpr).fontSize);
       els.qExpr.style.fontSize = Math.max(16, Math.floor(size * width / natural)) + "px";
     }
   }
 
-  var TEN = BigInt(10);
-  function p10(n){ return TEN ** BigInt(n); }
-  function rnd(n){ return Math.floor(Math.random() * n); }
-
-  function randBig(n){
-    var s = String(1 + rnd(9));
-    for(var i = 1; i < n; i++) s += String(rnd(10));
-    return BigInt(s);
-  }
-
-  // 同 randBig，但保证不等于 1：乘法里出现 a×1 / 1×b 没有练习价值
-  function randBigNoOne(n){
-    var v;
-    do { v = randBig(n); } while(v === BigInt(1));
-    return v;
-  }
-
-  // 位数上限为 6，范围可直接用 Number 均匀抽样，避免取模造成的大幅偏差。
-  function randBetween(lo, hi){
-    var range = Number(hi - lo + BigInt(1));
-    return range > 0 ? lo + BigInt(rnd(range)) : lo;
-  }
-
-  /* ---------------- 出题（A/B 位数独立） ---------------- */
-  function tryDiv(dd, bd){
-    var loB = p10(bd - 1);
-    if(loB < BigInt(2)) loB = BigInt(2);              // 除数不为 1，避免无意义的题
-    var hiB = p10(bd) - BigInt(1);
-    var cap = (p10(dd) - BigInt(1)) / BigInt(2);      // 让商 >= 2，避免出现 x ÷ x = 1
-    if(cap < hiB) hiB = cap;
-    var strict = hiB >= loB;
-    if(!strict) return null; // 不允许交换 A/B 或突破已选位数
-    var b = randBetween(loB, hiB);
-    // 随机出小数商：约 5 成概率尝试“商为一位小数”的题（如 72 ÷ 5 = 14.4）
-    if(rnd(10) < 5){
-      var rd = tryDivDec(dd, b);
-      if(rd) return rd;
-    }
-    var loA = p10(dd - 1);
-    var lo = (loA + b - BigInt(1)) / b; // 向上取整；整除边界也属于合法题目
-    var hi = (p10(dd) - BigInt(1)) / b;
-    if(strict && hi >= BigInt(2) && lo < BigInt(2)) lo = BigInt(2);
-    if(hi < lo) return null;
-    var q = randBetween(lo, hi);
-    return { a: b * q, b: b, ans: q };
-  }
-
-  // 出“商为一位小数”的题：a ÷ b = q，q = m / g（g = gcd(b, 10)）。
-  // 除数含因子 2 或 5 时商才可能是有限小数；a = m * (b / g) 恒为整数。
-  function tryDivDec(dd, b){
-    var g = BigInt(1);
-    if(b % BigInt(2) === BigInt(0)) g *= BigInt(2);
-    if(b % BigInt(5) === BigInt(0)) g *= BigInt(5);
-    if(g === BigInt(1)) return null;                 // 与 10 互质 → 商只能是整数
-    var step = b / g;                                // 被除数必须是 step 的倍数
-    var loA = p10(dd - 1), hiA = p10(dd) - BigInt(1);
-    var loM = (loA + step - BigInt(1)) / step;       // 向上取整，保证被除数位数
-    var hiM = hiA / step;
-    if(loM < BigInt(2) * g) loM = BigInt(2) * g;     // 商 >= 2，避免无意义题
-    if(hiM < loM) return null;
-    for(var i = 0; i < 20; i++){
-      var m = randBetween(loM, hiM);
-      if(m % g !== BigInt(0)){                       // 确保商带小数部分（真小数）
-        return { a: m * step, b: b, ans: Number(m) / Number(g) };
-      }
-    }
-    return null;                                     // 没抽到合适的 m，退回整数商
-  }
-
-  function makeDiv(da, db){
-    if(da < db) return null;
-    return tryDiv(da, db);
-  }
-
-  function digitsOf(n){
-    var str = n.toString(), out = [];
-    for(var i = str.length - 1; i >= 0; i--) out.push(+str.charAt(i));
-    return out;
-  }
-
-  // 加法：某一列相加 >= 10 即产生进位
-  function addCarry(a, b){
-    var A = digitsOf(a), B = digitsOf(b), carry = 0;
-    var n = Math.max(A.length, B.length);
-    for(var i = 0; i < n; i++){
-      var v = (A[i] || 0) + (B[i] || 0) + carry;
-      if(v >= 10) return true;
-      carry = 0;
-    }
-    return false;
-  }
-
-  // 减法：某一位不够减即产生借位（a >= b）
-  function subBorrow(a, b){
-    var A = digitsOf(a), B = digitsOf(b);
-    for(var i = 0; i < A.length; i++){
-      if(A[i] < (B[i] || 0)) return true;
-    }
-    return false;
-  }
-
-  // 乘法：竖式相乘过程中出现进位
-  function mulCarry(a, b){
-    var A = digitsOf(a), B = digitsOf(b);
-    for(var j = 0; j < B.length; j++){
-      var d = B[j];
-      if(d === 0) continue;
-      var carry = 0;
-      for(var i = 0; i < A.length; i++){
-        var p = A[i] * d + carry;
-        carry = Math.floor(p / 10);
-        if(carry > 0) return true;
-      }
-      if(carry > 0) return true;
-    }
-    return false;
-  }
-
-  // 判断一道题是否含进位/借位（除法用「退位」：商的位数少于被除数位数）
-  function carryInfo(q){
-    if(q.op === "+") return addCarry(q.a, q.b);
-    if(q.op === "−") return subBorrow(q.a, q.b);
-    if(q.op === "×") return mulCarry(q.a, q.b);
-    var qs = q.ans.toString();                 // BigInt: "24"；小数: "14.4"
-    var dot = qs.indexOf(".");
-    if(dot > -1) qs = qs.slice(0, dot);        // 按商的整数部分位数判断
-    return qs.length < q.a.toString().length;
-  }
-
-  function carryOk(q){
-    if(!S.carry) return true;
-    return S.carry === 1 ? carryInfo(q) : !carryInfo(q);
-  }
-
-  function genForMode(op){
-    if(!isConfigValid(op)) return null;
-    var q = null;
-    for(var tries = 0; tries < 2000; tries++){
-      q = genRawFor(op);
-      if(q && carryOk(q)) return q;
-    }
-    return null;
-  }
-
-  function genQuestion(){
-    if(!S.ops.length) return null;
-    var candidates = S.ops.filter(function(op){ return isConfigValid(op); });
-    if(!candidates.length) return null;
-    // 先跳过不可能的配置，避免无限模式在无效算子中反复空转。
-    for(var i = 0; i < 20; i++){
-      var q = genForMode(candidates[rnd(candidates.length)]);
-      if(q) return q;
-    }
-    // 随机选中暂未命中的算子时，逐个尝试，避免低概率配置导致练习中断。
-    for(var j = 0; j < candidates.length; j++){
-      var fallback = genForMode(candidates[j]);
-      if(fallback) return fallback;
-    }
-    return null;
-  }
-
-  function isConfigValid(op){
-    var d = S.dg[op];
-    if((op === "−" || op === "÷") && d.a < d.b) return false;
-    // 商至少为 2 且除数至少为 2，所以商必然少于被除数位数。
-    if(op === "÷" && (S.carry === 2 || (S.carry === 1 && d.a === 1 && d.b === 1))) return false;
-    if(op === "−" && d.a === 1 && d.b === 1 && S.carry === 1) return false;
-    return true;
-  }
-
-  function validateQueueOps(list){
-    for(var i = 0; i < list.length; i++){
-      if(!isConfigValid(list[i])){
-        var op = list[i], d = S.dg[op];
-        if((op === "−" || op === "÷") && d.a < d.b)
-          return op + "：当前规则下 A 位数不能小于 B 位数，请调整位数";
-        if(op === "÷") return "÷：当前位数与退位规则无可用题目，请调整设置";
-        return "−：两个一位非负数相减不可能借位，请调整规则";
-      }
-    }
-    return "";
-  }
-
-  // 按各题型题数预铺整套题，洗牌后逐题生成（保证每套题各类型数量精确）
-  function buildQueue(){
-    var ops = [], i, j, k;
-    for(i = 0; i < opsOrder.length; i++){
-      if(S.ops.indexOf(opsOrder[i]) >= 0 && S.cnt[opsOrder[i]] > 0) ops.push(opsOrder[i]);
-    }
-    var list = [];
-    for(i = 0; i < ops.length; i++){
-      for(j = 0; j < S.cnt[ops[i]]; j++) list.push(ops[i]);
-    }
-    if(!list.length) return null;
-    for(k = list.length - 1; k > 0; k--){
-      var x = rnd(k + 1), t = list[k];
-      list[k] = list[x]; list[x] = t;
-    }
-    var invalid = validateQueueOps(list);
-    if(invalid) return { error: invalid };
-    var qs = [];
-    for(k = 0; k < list.length; k++){
-      var q = genForMode(list[k]);
-      if(!q) return { error: list[k] + "：当前位数与进位/借位规则无可用题目，请调整设置" };
-      qs.push(q);
-    }
-    return qs;
-  }
-
-  // 乘法：按进位要求构造，保证直接命中
-  function genMul(da, db, mode){
-    var i, t, sa, sb, A, Bq;
-    if(mode === 2){                     // 禁止进位：全程小数字 + 竖式校验
-      for(t = 0; t < 60; t++){
-        // 单位数放宽到 2~9（寄望乘积 <10 时仍不进位），多位才收窄到 2~3 打头
-        sa = da === 1 ? String(2 + rnd(8)) : String(2 + rnd(2));
-        for(i = 1; i < da; i++) sa += String(rnd(3));
-        sb = db === 1 ? String(2 + rnd(8)) : String(2 + rnd(2));
-        for(i = 1; i < db; i++) sb += String(rnd(4));
-        A = BigInt(sa); Bq = BigInt(sb);
-        // 双保险：两位都 >= 2（杜绝 ×1），且竖式确认不进位
-        if(A > BigInt(1) && Bq > BigInt(1) && !mulCarry(A, Bq))
-          return { a: A, b: Bq, op: "×", ans: A * Bq };
-      }
-      // 兜底：按位数取全 2 的串（222×22 之类），必然不进位、必然不含 1
-      var fa = "2", fb = "2";
-      for(i = 1; i < da; i++) fa += "2";
-      for(i = 1; i < db; i++) fb += "2";
-      A = BigInt(fa); Bq = BigInt(fb);
-      return { a: A, b: Bq, op: "×", ans: A * Bq };
-    }
-
-    // 必须进位：个位乘积 >= 10
-    var pairs = [[2,5],[2,6],[2,7],[2,8],[2,9],[3,4],[3,5],[3,6],[3,7],[3,8],[3,9],
-                 [4,3],[4,4],[4,5],[4,6],[5,2],[5,3],[5,4],[6,2],[6,3],[7,2],[8,2],[9,2]];
-    var pr = pairs[rnd(pairs.length)];
-    sa = ""; sb = "";
-    for(i = 0; i < da - 1; i++) sa += String(i === 0 ? 1 + rnd(9) : rnd(10));
-    sa += String(pr[0]);
-    for(i = 0; i < db - 1; i++) sb += String(i === 0 ? 1 + rnd(9) : rnd(10));
-    sb += String(pr[1]);
-    A = BigInt(sa); Bq = BigInt(sb);
-    return { a: A, b: Bq, op: "×", ans: A * Bq };
-  }
-
-  function genRaw(){
-    var op = S.ops[rnd(S.ops.length)];
-    return genRawFor(op);
-  }
-
-  // 按指定算子 + 该算子各自的位数出题
-  function genRawFor(op){
-    var da = S.dg[op].a, db = S.dg[op].b;
-    var a, b, ans;
-
-    if(op === "×" && S.carry) return genMul(da, db, S.carry);
-
-    if(op === "+"){
-      a = randBig(da); b = randBig(db); ans = a + b;
-    } else if(op === "−"){
-      a = randBig(da); b = randBig(db);
-      if(a < b) return null;              // 不交换 A/B；调用方按所选位数重新抽样
-      if(a === b){
-        // a == b 不能出 a−a=0：优先把 a 加一；加一会涨位时改把 b 减一，都不许丢位数
-        var a2 = a + BigInt(1), b2 = b - BigInt(1);
-        if(a2.toString().length === a.toString().length){ a = a2; }
-        else if(b2 >= BigInt(1) && b2.toString().length === b.toString().length){ b = b2; }
-        else { a = a2; }
-      }
-      ans = a - b;
-    } else if(op === "×"){
-      a = randBigNoOne(da); b = randBigNoOne(db); ans = a * b;
-    } else {
-      var d = makeDiv(da, db);
-      a = d.a; b = d.b; ans = d.ans;
-    }
-    return { a: a, b: b, op: op, ans: ans };
-  }
+  /* ---------------- Pure-core adapters ---------------- */
+  function carryInfo(q){ return Core.carryInfo(q); }
+  function isConfigValid(op){ return Core.isConfigValid(S, op); }
+  function genForMode(op){ return Core.generateFor(S, op); }
+  function genQuestion(){ return Core.generateQuestion(S); }
+  function buildQueue(){ return Core.buildSchedule(S); }
 
   function exprText(q){ return q.a + " " + q.op + " " + q.b + " ="; }
 
   /* ---------------- 视图 ---------------- */
   function show(name){
+    if(UI.ready && name !== "drill") flushPersistence();
     els.home.classList.toggle("active", name === "home");
     els.setup.classList.toggle("active", name === "setup");
     els.drill.classList.toggle("active", name === "drill");
@@ -501,24 +281,29 @@
   /* ---------------- 流程 ---------------- */
   function startRun(queue){
     if(!S.ops.length && !queue){ toast("请至少选择一个算子"); return; }
-    S.i = 0; S.ok = 0; S.bad = 0; S.streak = 0; S.maxStreak = 0;
-    S.times = []; S.wrong = [];
-    if(queue){
-      S.queue = queue;
-    } else if(S.unlimited){
+    var nextQueue = queue || null;
+    if(!queue && S.unlimited){
       if(!S.ops.some(isConfigValid)){ toast("当前算子与位数、进位规则无可用题目，请调整设置"); return; }
-      S.queue = null;                    // 无限模式：随机出题
-    } else {
-      var qs = buildQueue();             // 按各题型题数铺好整套题
-      if(!qs){ toast("请设置各题型题数（至少一种 > 0）"); return; }
-      if(qs.error){ toast(qs.error); return; }
-      S.queue = qs;
+    } else if(!queue){
+      nextQueue = buildQueue();
+      if(!nextQueue){ toast("请设置各题型题数（至少一种 > 0）"); return; }
+      if(nextQueue.error){ toast(nextQueue.error); return; }
     }
-    S.startAt = Date.now();
-    S.log = [];
+    stopTimer();
+    clearTimeout(S.hideTimer); clearTimeout(S.nextTimer);
+    S.qid++;
+    S.queue = nextQueue;
+    S.i = 0; S.ok = 0; S.bad = 0; S.streak = 0; S.maxStreak = 0;
+    S.timeTotal = 0; S.timeCount = 0; S.fastest = Infinity;
+    S.wrong = []; S.log = [];
+    UI.reviewRows = []; UI.reviewCursor = 0;
+    pendingPointerClicks.clear();
+    S.reviewLimit = nextQueue ? Math.max(1, nextQueue.length) : Core.RECORD_LIMIT;
+    S.reviewBuffer = Core.createRingBuffer(S.reviewLimit);
+    S.startClock = performance.now();
     S.reviewMode = "all";
-    // 自适应从基准值重新起算；基准为 0（不限）时自适应不参与
     S.curShow = S.showMs > 0 ? Math.max(adaptFloor(), S.showMs) : 0;
+    saveSettings();
     show("drill");
     nextQuestion();
   }
@@ -539,11 +324,12 @@
     if(S.queue && S.i >= S.queue.length){ finish(); return; }
     if(!S.queue && total && S.i >= total){ finish(); return; }
 
-    S.locked = false;
     S.qid++;
-    var q = S.queue ? S.queue[S.i] : genQuestion();
-    if(!q){ toast("当前设置无可用题目，请调整位数或进位规则"); show("home"); S.locked = true; return; }
+    var item = S.queue && S.queue[S.i];
+    var q = item ? (typeof item === "string" ? genForMode(item) : item) : genQuestion();
+    if(!q){ S.locked = true; stopTimer(); toast("当前设置无可用题目，请调整位数或进位规则"); show("home"); return; }
     S.cur = q;
+    S.locked = false;
 
     els.qcard.classList.remove("good", "bad", "skip");
     els.qMark.textContent = "";
@@ -556,26 +342,53 @@
     scheduleHide();
   }
 
+  function updateTimer(){
+    if(S.locked || !els.drill.classList.contains("active")) return;
+    var elapsed = (performance.now() - S.t0) / 1000;
+    var left = S.limit > 0 ? Math.max(0, S.limit - elapsed) : 0;
+    var text = S.limit > 0 ? "剩 " + left.toFixed(1) + "s" : elapsed.toFixed(1) + "s";
+    if(els.timerText.textContent !== text) els.timerText.textContent = text;
+    els.timerText.style.color = S.limit > 0 && left <= 3 ? "var(--bad)" : "";
+    if(S.limit > 0 && left <= 0) resolve(false, null, true);
+  }
+
   function startTimer(){
     stopTimer();
     S.t0 = performance.now();
-    var limit = S.limit;
-    els.timerText.textContent = "0.0s";
-    els.timerText.style.color = "";
-    S.tick = setInterval(function(){
-      var el2 = (performance.now() - S.t0) / 1000;
-      if(limit > 0){
-        var left = Math.max(0, limit - el2);
-        els.timerText.textContent = "剩 " + left.toFixed(1) + "s";
-        els.timerText.style.color = left <= 3 ? "var(--bad)" : "";
-        if(left <= 0){ resolve(false, null, true); }
-      } else {
-        els.timerText.textContent = el2.toFixed(1) + "s";
+    updateTimer();
+    if(!document.hidden) S.tick = setInterval(updateTimer, 100);
+    if(S.limit > 0){
+      var qid = S.qid;
+      function checkDeadline(){
+        S.deadlineTimer = null;
+        if(qid !== S.qid || S.locked) return;
+        updateTimer();
+        if(!S.locked){
+          var remaining = S.limit * 1000 - (performance.now() - S.t0);
+          S.deadlineTimer = setTimeout(checkDeadline, Math.max(1, Math.ceil(remaining)));
+        }
       }
-    }, 100);
+      S.deadlineTimer = setTimeout(checkDeadline, S.limit * 1000);
+    }
   }
 
-  function stopTimer(){ if(S.tick){ clearInterval(S.tick); S.tick = null; } }
+  function stopTimer(){
+    if(S.tick !== null){ clearInterval(S.tick); S.tick = null; }
+    if(S.deadlineTimer !== null){ clearTimeout(S.deadlineTimer); S.deadlineTimer = null; }
+  }
+
+  function reconcileVisibility(){
+    if(document.hidden){
+      flushPersistence();
+      if(S.tick !== null){ clearInterval(S.tick); S.tick = null; }
+      return;
+    }
+    if(S.locked || !els.drill.classList.contains("active")) return;
+    updateTimer();
+    if(S.locked) return;
+    if(S.hideAt && performance.now() >= S.hideAt && !els.qExpr.classList.contains("hidden")) hideEquation();
+    if(S.tick === null) S.tick = setInterval(updateTimer, 100);
+  }
 
   // 显示时长到了就把算式藏起来，逼着先记住再算
   // 自适应只有同时设了显示时长才可能生效，统一用这个判断，避免「开关是开、其实没跑」
@@ -597,46 +410,32 @@
     return S.showMs;
   }
 
+  function hideEquation(){
+    if(S.locked) return;
+    els.qExpr.textContent = "？ ？ ？";
+    els.qExpr.classList.add("hidden");
+  }
+
   function scheduleHide(){
     clearTimeout(S.hideTimer);
+    S.hideTimer = null;
     var ms = effectiveShow();
+    S.hideAt = ms ? performance.now() + ms : 0;
     els.showHint.textContent = ms ? " · " + ms + "ms" : "";
     if(!ms) return;
     var qid = S.qid;
     S.hideTimer = setTimeout(function(){
-      if(qid !== S.qid || S.locked) return;
-      els.qExpr.textContent = "？ ？ ？";
-      els.qExpr.classList.add("hidden");
+      if(qid === S.qid) hideEquation();
     }, ms);
   }
 
   function submit(){
     if(S.locked) return;
-    // 后台标签页的 interval 可能被节流，提交时以真实经过时间判定截止。
     if(S.limit > 0 && performance.now() - S.t0 >= S.limit * 1000){
       resolve(false, null, true); return;
     }
-    var raw = els.answer.value.trim().replace(/[,\s]/g, "");
-    if(raw === ""){ return; }
-    if(!/^\d+(\.\d+)?$/.test(raw)){ return; }            // 整数或小数
-    var q = S.cur;
-    var exact = false, approx = false;
-    if(q.op === "÷"){
-      // 商可能是小数（如 14.4），统一用数值比较
-      var val = parseFloat(raw);
-      if(!isFinite(val)) return;
-      var ref = Number(q.ans);
-      var diff = Math.abs(val - ref);
-      exact = diff <= 1e-9;                              // 浮点极小误差视为相等
-      if(!exact && S.divTol > 0 && ref > 0){
-        if(diff <= ref * (S.divTol / 100)){ exact = true; approx = true; }  // 百分比容差
-      }
-    } else {
-      var bval;
-      try{ bval = BigInt(raw); }catch(e){ return; }
-      exact = bval === q.ans;
-    }
-    resolve(exact, raw, false, approx);
+    var result = Core.gradeAnswer(S.cur, els.answer.value, S.divTol);
+    if(result.valid) resolve(result.correct, result.raw, false, result.approx);
   }
 
   function resolve(correct, userRaw, timeout, approx){
@@ -645,12 +444,18 @@
     stopTimer();
     clearTimeout(S.hideTimer);
 
-    var used = (performance.now() - S.t0) / 1000;
-    S.times.push(used);
+    var used = Math.max(0, (performance.now() - S.t0) / 1000);
+    // Skip and timeout share the same real deadline, even when browser timers are throttled.
+    if(S.limit > 0 && used >= S.limit){
+      correct = false; userRaw = null; timeout = true; approx = false;
+      used = S.limit;
+    }
+    S.timeTotal += used; S.timeCount++; S.fastest = Math.min(S.fastest, used);
     var q = S.cur;
 
-    // 只记录，不反馈；最后在结算页统一公布
-    S.log.push({
+    // One bounded review copy, with the original question retained for exact retries.
+    S.reviewBuffer.push({
+      question: q,
       expr: exprText(q),
       ans: q.ans.toString(),
       user: userRaw == null ? null : String(userRaw),
@@ -665,8 +470,6 @@
       if(S.streak > S.maxStreak) S.maxStreak = S.streak;
     } else {
       S.bad++; S.streak = 0;
-      S.wrong.push({ expr: exprText(q), ans: q.ans.toString(),
-                     user: timeout ? "超时" : (userRaw === null ? "跳过" : userRaw) });
     }
 
     // 数据分析用的记录
@@ -676,8 +479,9 @@
       ok: correct ? 1 : 0, sec: Math.round(used * 10) / 10,
       carry: carryInfo(q) ? 1 : 0
     });
-    if(S.records.length > 2000) S.records.splice(0, S.records.length - 2000);
-    saveRecords();
+    if(S.records.length > Core.RECORD_LIMIT) S.records.shift();
+    markStatsDirty();
+    scheduleRecordsSave();
 
     // 自适应：答对缩短、答错延长（只影响下一题）
     if(adaptActive()){
@@ -692,7 +496,8 @@
     els.qcard.classList.remove("good", "bad", "skip");
     els.qMark.textContent = "";
     var resolvedQid = S.qid;
-    setTimeout(function(){
+    S.nextTimer = setTimeout(function(){
+      S.nextTimer = null;
       if(resolvedQid !== S.qid || !els.drill.classList.contains("active")) return;   // 已结束/退出则不再换题
       S.i++;
       nextQuestion();
@@ -710,26 +515,46 @@
     if(!silent) renderReview();
   }
 
+  function appendReviewRows(){
+    var more = els.reviewList.querySelector("[data-review-more]");
+    if(more) more.remove();
+    var end = Math.min(UI.reviewCursor + 100, UI.reviewRows.length), html = [];
+    for(; UI.reviewCursor < end; UI.reviewCursor++){
+      var x = UI.reviewRows[UI.reviewCursor];
+      var user = x.timeout ? "超时" : (x.skipped ? "跳过" : x.user);
+      var mark = x.ok && x.approx ? "≈" : "";
+      html.push('<div class="review-row"><span class="r-expr">' + Core.escapeHTML(x.expr)
+        + '</span><span class="r-user ' + (x.ok ? "ok" : "bad") + '">' + mark + Core.escapeHTML(user)
+        + '</span><span class="r-ans">' + Core.escapeHTML(x.ans) + '</span></div>');
+    }
+    els.reviewList.insertAdjacentHTML("beforeend", html.join(""));
+    if(UI.reviewCursor < UI.reviewRows.length){
+      var button = document.createElement("button");
+      button.className = "btn ghost review-more";
+      button.setAttribute("data-review-more", "");
+      button.textContent = "加载更多 · 剩余 " + (UI.reviewRows.length - UI.reviewCursor) + " 题";
+      els.reviewList.appendChild(button);
+    }
+  }
+
   function renderReview(){
     var mode = S.reviewMode || "all";
-    var rows = (S.log || []).filter(function(x){ return mode === "all" || !x.ok; });
-    if(!rows.length){
+    UI.reviewRows = S.log.filter(function(x){ return mode === "all" || !x.ok; });
+    UI.reviewCursor = 0;
+    els.reviewList.scrollTop = 0;
+    UI.reviewNote.hidden = S.timeCount <= S.log.length;
+    UI.reviewNote.textContent = UI.reviewNote.hidden ? "" : "已完成 " + S.timeCount + " 题；逐题回顾保留最近 " + S.reviewLimit + " 题。";
+    if(!UI.reviewRows.length){
       els.reviewList.innerHTML = '<div class="empty-stat">没有记录</div>';
       return;
     }
-    var html = '<div class="review-row head"><span>题目</span><span>你的答案</span><span>正确答案</span></div>';
-    for(var i = 0; i < rows.length; i++){
-      var x = rows[i];
-      var user = x.timeout ? "超时" : (x.skipped ? "跳过" : x.user);
-      var mark = (x.ok && x.approx) ? "≈" : "";
-      html += '<div class="review-row">'
-            + '<span class="r-expr">' + x.expr + "</span>"
-            + '<span class="r-user ' + (x.ok ? "ok" : "bad") + '">' + mark + user + "</span>"
-            + '<span class="r-ans">' + x.ans + "</span>"
-            + "</div>";
-    }
-    els.reviewList.innerHTML = html;
+    els.reviewList.innerHTML = '<div class="review-row head"><span>题目</span><span>你的答案</span><span>正确答案</span></div>';
+    appendReviewRows();
   }
+
+  els.reviewList.addEventListener("click", function(e){
+    if(e.target.closest("[data-review-more]")) appendReviewRows();
+  });
 
   /* ---------------- 结算 ---------------- */
   function fmtTime(sec){
@@ -741,14 +566,18 @@
 
   function finish(){
     stopTimer();
-    clearTimeout(S.hideTimer);
+    clearTimeout(S.hideTimer); clearTimeout(S.nextTimer);
+    S.hideTimer = null; S.nextTimer = null; S.hideAt = 0;
+    flushPersistence();
     S.qid++; // 使旧题的隐藏/换题回调失效
     S.locked = true;
     var done = S.ok + S.bad;
     var acc = done ? Math.round(S.ok / done * 100) : 0;
-    var avg = S.times.length ? S.times.reduce(function(x, y){ return x + y; }, 0) / S.times.length : null;
-    var fast = S.times.length ? S.times.reduce(function(best, sec){ return Math.min(best, sec); }, Infinity) : null;
-    var totalSec = (Date.now() - S.startAt) / 1000;
+    var avg = S.timeCount ? S.timeTotal / S.timeCount : null;
+    var fast = S.timeCount ? S.fastest : null;
+    var totalSec = Math.max(0, (performance.now() - S.startClock) / 1000);
+    S.log = S.reviewBuffer ? S.reviewBuffer.toArray() : [];
+    S.wrong = S.log.filter(function(x){ return !x.ok; }).map(function(x){ return x.question; });
 
     els.scoreBig.textContent = acc + "%";
     els.scoreSub.textContent = "答对 " + S.ok + " / " + done + " 题";
@@ -805,15 +634,16 @@
     bits.push(S.showMs ? "显示 " + S.showMs + "ms" + (adaptActive() ? "·自适应" : "") : "算式常显");
     if(S.carry === 1) bits.push("必须进位");
     if(S.carry === 2) bits.push("禁止进位");
-    els.heroSub.textContent = digitsText() + " · " + bits.join(" · ");
+    var digits = digitsText();
+    els.heroSub.textContent = digits + " · " + bits.join(" · ");
     UI.count.textContent = S.unlimited ? "∞" : String(S.total);
     UI.countUnit.textContent = S.unlimited ? "自由练习" : "题 / 本轮";
-    UI.digits.textContent = digitsText();
+    UI.digits.textContent = digits;
     UI.limit.textContent = S.limit ? S.limit + " 秒" : "不限时";
     UI.show.textContent = S.showMs ? S.showMs + "ms" + (adaptActive() ? " · 自适应" : "") : "一直显示";
     els.startBtn.disabled = !ops.length || (!S.unlimited && S.total === 0);
     syncSelectionA11y();
-    saveSettings();
+    scheduleSettingsSave();
   }
 
   function updateHint(){
@@ -922,42 +752,56 @@
     applyLimit(parseFloat(els.limitInput.value) || 0);
   });
 
-  /* ---------------- 内置键盘 ---------------- */
-  var pendingClicks = 0, suppressTimer = null;
-
-  function pressKey(key){
-    if(!key || S.locked) return false;
-    var k = key.getAttribute("data-k");
-    var v = els.answer.value;
-    if(k === "back"){ els.answer.value = v.slice(0, -1); }
-    else if(k === "clear"){ els.answer.value = ""; }
-    else if(v.length < 24){
-      // 小数点：不能开头、不能重复
-      if(k === "." && (v === "" || v.indexOf(".") > -1)) return true;
-      els.answer.value = v + k;
-    }
-    return true;
+  /* ---------------- Unified keypad and physical keyboard ---------------- */
+  var pendingPointerClicks = new Map();
+  function pressKey(command){
+    if(S.locked) return;
+    var value = Core.nextInput(els.answer.value, command);
+    if(value !== els.answer.value) els.answer.value = value;
   }
 
-  // 按下即录入：连点同一个数字也立刻响应，且不会触发双击缩放
-  els.keypad.addEventListener("pointerdown", function(e){
-    var key = e.target && e.target.closest ? e.target.closest(".key") : null;
-    if(!key) return;
-    e.preventDefault();          // 阻止默认手势（双击缩放 / 长按选择）
-    pressKey(key);
-    pendingClicks++;             // 这次按压对应的 click 稍后要忽略
-    clearTimeout(suppressTimer);
-    suppressTimer = setTimeout(function(){ pendingClicks = 0; }, 1200);
-  });
+  function onKeypadPointer(e){
+    var key = e.target.closest(".key");
+    if(!key || e.button !== 0) return;
+    e.preventDefault();
+    pressKey(key.getAttribute("data-k"));
+    var now = performance.now(), pending = pendingPointerClicks.get(key);
+    pendingPointerClicks.set(key, { count: pending && now < pending.until ? pending.count + 1 : 1, until: now + 30000 });
+  }
 
-  // 兼容：键盘（Tab + 回车/空格）与不支持 pointer 事件的旧浏览器
-  els.keypad.addEventListener("click", function(e){
-    if(pendingClicks > 0){       // 已由同一次按压录入，忽略配对 click
-      pendingClicks--;
+  function onKeypadClick(e){
+    var key = e.target.closest(".key");
+    if(!key) return;
+    var pending = pendingPointerClicks.get(key);
+    // Native keyboard/assistive-technology clicks have detail=0 and must stay usable.
+    if(e.detail > 0 && pending && pending.count && performance.now() < pending.until){
+      if(--pending.count === 0) pendingPointerClicks.delete(key);
       return;
     }
-    pressKey(e.target && e.target.closest ? e.target.closest(".key") : null);
-  });
+    pendingPointerClicks.delete(key);
+    pressKey(key.getAttribute("data-k"));
+  }
+
+  function onKeypadCancel(e){
+    var key = e.target.closest(".key");
+    if(key) pendingPointerClicks.delete(key);
+  }
+
+  function onDrillKeydown(e){
+    if(!els.drill.classList.contains("active") || S.locked || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+    var target = e.target;
+    // Enter/Space on a focused button should activate that button, not submit a question.
+    if(target && target.closest && target.closest("button, a") && (e.key === "Enter" || e.key === " ")) return;
+    var command = /^[0-9]$/.test(e.key) || e.key === "." ? e.key
+      : ({ Backspace: "back", Escape: "clear" })[e.key];
+    if(command){ e.preventDefault(); pressKey(command); }
+    else if(e.key === "Enter"){ e.preventDefault(); if(!e.repeat) submit(); }
+  }
+
+  els.keypad.addEventListener("pointerdown", onKeypadPointer);
+  els.keypad.addEventListener("click", onKeypadClick);
+  els.keypad.addEventListener("pointercancel", onKeypadCancel);
+  document.addEventListener("keydown", onDrillKeydown);
 
   // Repeated keypad taps stay immediate; page-level pinch zoom remains available.
   els.keypad.addEventListener("dblclick", function(e){ e.preventDefault(); });
@@ -979,34 +823,8 @@
   els.backBtn.addEventListener("click", function(){ show("home"); });
 
   els.retryWrongBtn.addEventListener("click", function(){
-    var qs = S.wrong.map(function(w){
-      var m = w.expr.match(/^(\d+)\s+([+\-−×÷])\s+(\d+)\s*=/);
-      if(!m) return null;
-      var a = BigInt(m[1]), b = BigInt(m[3]), op = m[2];
-      var ans = op === "+" ? a + b : op === "−" ? a - b : op === "×" ? a * b : Number(a) / Number(b);
-      return { a: a, b: b, op: op, ans: ans };
-    }).filter(Boolean);
-    if(!qs.length){ toast("没有可重练的错题"); return; }
-    startRun(qs);
-  });
-
-  // 物理键盘（桌面端）
-  document.addEventListener("keydown", function(e){
-    if(!els.drill.classList.contains("active")) return;
-    if(S.locked || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
-    if(["Backspace", "Enter", "Escape", "."].indexOf(e.key) !== -1 || /^[0-9]$/.test(e.key)) e.preventDefault();
-    if(e.key >= "0" && e.key <= "9"){
-      if(els.answer.value.length < 24) els.answer.value += e.key;
-    } else if(e.key === "Backspace"){
-      els.answer.value = els.answer.value.slice(0, -1);
-    } else if(e.key === "."){
-      var v = els.answer.value;
-      if(v !== "" && v.indexOf(".") === -1 && v.length < 24) els.answer.value = v + ".";
-    } else if(e.key === "Enter"){
-      submit();
-    } else if(e.key === "Escape"){
-      els.answer.value = "";
-    }
+    if(!S.wrong.length){ toast("没有可重练的错题"); return; }
+    startRun(S.wrong.slice());
   });
 
   els.themeBtn.addEventListener("click", function(){
@@ -1033,29 +851,19 @@
 
   /* ---------------- 数据分析 ---------------- */
   function loadRecords(){
-    try{
-      var raw = localStorage.getItem("drill.records.v1");
-      var parsed = raw ? JSON.parse(raw) : [];
-      S.records = Array.isArray(parsed) ? parsed.filter(function(r){
-        return r && typeof r === "object"
-          && Number.isFinite(r.t) && r.t >= 0 && r.t <= 8640000000000000
-          && opsOrder.indexOf(r.op) !== -1
-          && Number.isInteger(r.la) && r.la >= 1 && r.la <= 6
-          && Number.isInteger(r.lb) && r.lb >= 1 && r.lb <= 6
-          && (r.ok === 0 || r.ok === 1)
-          && Number.isFinite(r.sec) && r.sec >= 0
-          && (r.carry === 0 || r.carry === 1);
-      }).slice(-2000) : [];
-    }catch(e){ S.records = []; }
+    try{ S.records = Core.sanitizeRecords(localStorage.getItem("drill.records.v1")); }
+    catch(e){ S.records = []; }
+    markStatsDirty();
   }
 
   function saveRecords(){
-    try{ localStorage.setItem("drill.records.v1", JSON.stringify(S.records)); }catch(e){}
-  }
-
-  function dayKey(ts){
-    var d = new Date(ts);
-    return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+    clearTimeout(persistence.recordsTimer);
+    persistence.recordsTimer = null;
+    if(!persistence.recordsDirty) return;
+    try{
+      localStorage.setItem("drill.records.v1", JSON.stringify(S.records));
+      persistence.recordsDirty = false;
+    }catch(e){}
   }
 
   function fmtClock(ts){
@@ -1089,141 +897,43 @@
       + '<span class="vl">' + cnt + " 题 · " + pctv + "%</span></div>";
   }
 
-  function rangeStart(){
-    if(S.stRange === "1"){
-      var d = new Date(); d.setHours(0, 0, 0, 0);
-      return d.getTime();
-    }
-    if(S.stRange === "7") return Date.now() - 7 * 86400000;
-    return 0;
-  }
-
   function renderStats(){
-    var from = rangeStart();
-    var R = (S.records || []).filter(function(r){ return r.t >= from; });
-    R.sort(function(x, y){ return x.t - y.t; });
-    var n = R.length;
-
-    var okN = 0, secSum = 0, wrongN = 0, daysSet = {}, bestStreak = 0, curStreak = 0;
-    var okSec = 0, okCnt = 0, badSec = 0, badCnt = 0;
-    for(var i = 0; i < n; i++){
-      var r = R[i];
-      if(r.ok){
-        okN++; okSec += r.sec || 0; okCnt++;
-        curStreak++; if(curStreak > bestStreak) bestStreak = curStreak;
-      } else {
-        wrongN++; badSec += r.sec || 0; badCnt++;
-        curStreak = 0;
-      }
-      secSum += r.sec || 0;
-      daysSet[dayKey(r.t)] = 1;
-    }
-
-    els.stAcc.textContent = n ? Math.round(okN / n * 100) + "%" : "—";
-    els.stSub.textContent = n
-      ? "答对 " + okN + " / " + n + " 题" + (okN === n ? " · 全对！" : " · 错 " + wrongN + " 题")
-      : "该范围内还没有练习记录";
+    var stats = getStats(S.stRange);
+    if(UI.lastStatsRender === stats) return;
+    var n = stats.n, good = stats.ok, wrong = stats.wrong;
+    els.stAcc.textContent = n ? Math.round(good / n * 100) + "%" : "—";
+    els.stSub.textContent = n ? "答对 " + good + " / " + n + " 题" + (good === n ? " · 全对！" : " · 错 " + wrong + " 题") : "该范围内还没有练习记录";
     els.stTotal.textContent = n;
-    els.stAvg.textContent = n ? fmtTime(secSum / n) : "—";
-    els.stDur.textContent = n ? fmtDur(secSum) : "—";
-    els.stDays.textContent = Object.keys(daysSet).length;
-    els.stStreak.textContent = bestStreak;
-    els.stWrong.textContent = wrongN;
+    els.stAvg.textContent = n ? fmtTime(stats.sec / n) : "—";
+    els.stDur.textContent = n ? fmtDur(stats.sec) : "—";
+    els.stDays.textContent = stats.byDay.size;
+    els.stStreak.textContent = stats.bestStreak;
+    els.stWrong.textContent = wrong;
 
-    /* 最近 10 次练习（间隔 > 5 分钟算新的一次） */
-    var sessions = [], cur = null;
-    for(var i2 = 0; i2 < n; i2++){
-      if(!cur || R[i2].t - cur.end > 5 * 60000){
-        cur = { start: R[i2].t, end: R[i2].t, n: 0, ok: 0 };
-        sessions.push(cur);
-      }
-      cur.end = R[i2].t; cur.n++;
-      if(R[i2].ok) cur.ok++;
-    }
-    var last = sessions.slice(-10), sh = "";
-    for(var s2 = 0; s2 < last.length; s2++){
-      var ss = last[s2], acc2 = Math.round(ss.ok / ss.n * 100);
-      var d2 = new Date(ss.start);
-      sh += '<div class="bar" role="listitem" tabindex="0" aria-label="' + ss.n + " 题，正确率 " + acc2 + '%" title="' + (d2.getMonth() + 1) + "/" + d2.getDate() + " " + fmtClock(ss.start)
-          + " · " + ss.n + " 题 · 正确率 " + acc2 + '%">'
-          + '<i style="height:' + Math.max(4, acc2) + '%"></i>'
-          + "<span>" + acc2 + "%</span></div>";
-    }
-    els.stSessions.innerHTML = sh || '<div class="empty-stat" style="grid-column:1/-1">暂无练习</div>';
+    els.stSessions.innerHTML = stats.sessions.map(function(session){
+      var acc = Math.round(session.ok / session.n * 100), date = new Date(session.start);
+      return '<div class="bar" role="listitem" tabindex="0" aria-label="' + session.n + " 题，正确率 " + acc
+        + '%" title="' + (date.getMonth() + 1) + "/" + date.getDate() + " " + fmtClock(session.start)
+        + " · " + session.n + " 题 · 正确率 " + acc + '%"><i style="height:' + Math.max(4, acc)
+        + '%"></i><span>' + acc + '%</span></div>';
+    }).join("") || '<div class="empty-stat" style="grid-column:1/-1">暂无练习</div>';
 
-    /* 按算子 */
-    var ops = ["+", "−", "×", "÷"], ohtml = "";
-    for(var k = 0; k < ops.length; k++){
-      var o = ops[k], tot = 0, good = 0, secs = 0;
-      for(var j = 0; j < n; j++){
-        if(R[j].op === o){ tot++; secs += R[j].sec || 0; if(R[j].ok) good++; }
-      }
-      ohtml += statRow(o, good, tot, tot ? secs / tot : null);
-    }
-    els.stOps.innerHTML = ohtml;
-
-    /* 进位 / 借位 */
-    var c1t = 0, c1o = 0, c1s = 0, c0t = 0, c0o = 0, c0s = 0;
-    for(var j2 = 0; j2 < n; j2++){
-      if(R[j2].carry){ c1t++; c1s += R[j2].sec || 0; if(R[j2].ok) c1o++; }
-      else { c0t++; c0s += R[j2].sec || 0; if(R[j2].ok) c0o++; }
-    }
-    els.stCarry.innerHTML = statRow("有进位", c1o, c1t, c1t ? c1s / c1t : null)
-                          + statRow("无进位", c0o, c0t, c0t ? c0s / c0t : null);
-
-    /* 用时分布 */
-    var tb = [0, 0, 0, 0], tlabels = ["2 秒内", "2-5 秒", "5-10 秒", "10 秒以上"];
-    for(var j3 = 0; j3 < n; j3++){
-      var sec = R[j3].sec || 0;
-      var ti = sec < 2 ? 0 : sec < 5 ? 1 : sec < 10 ? 2 : 3;
-      tb[ti]++;
-    }
-    var th = "";
-    for(var t2 = 0; t2 < 4; t2++) th += distRow(tlabels[t2], tb[t2], n);
-    els.stTime.innerHTML = th;
-    els.stTimeNote.textContent = n
-      ? "答对平均 " + (okCnt ? (okSec / okCnt).toFixed(1) : "—") + "s"
-        + "　|　答错平均 " + (badCnt ? (badSec / badCnt).toFixed(1) : "—") + "s"
-        + (badCnt && okCnt && badSec / badCnt > (okSec / okCnt) * 1.2
-            ? "　→ 错误题明显更慢，注意熟练度" : "")
-      : "";
-
-    /* 难度分桶 */
-    var labels = ["≤4 位", "5-8 位", "9-12 位", ">12 位"];
-    var bt = [0, 0, 0, 0], bo = [0, 0, 0, 0], bs = [0, 0, 0, 0];
-    for(var j4 = 0; j4 < n; j4++){
-      var sum = (R[j4].la || 0) + (R[j4].lb || 0);
-      var bi = sum <= 4 ? 0 : sum <= 8 ? 1 : sum <= 12 ? 2 : 3;
-      bt[bi]++; bs[bi] += R[j4].sec || 0;
-      if(R[j4].ok) bo[bi]++;
-    }
-    var lh = "";
-    for(var b2 = 0; b2 < 4; b2++) lh += statRow(labels[b2], bo[b2], bt[b2], bt[b2] ? bs[b2] / bt[b2] : null);
-    els.stLen.innerHTML = lh;
-
-    /* 最近 7 天 */
-    var today = new Date(); today.setHours(0, 0, 0, 0);
-    var series = [], maxN = 1;
-    for(var d = 6; d >= 0; d--){
-      var dt = new Date(today.getTime() - d * 86400000);
-      var key = dayKey(dt.getTime());
-      var cnt = 0, cc = 0;
-      for(var j5 = 0; j5 < n; j5++){
-        if(dayKey(R[j5].t) === key){ cnt++; if(R[j5].ok) cc++; }
-      }
-      if(cnt > maxN) maxN = cnt;
-      series.push({ label: (dt.getMonth() + 1) + "/" + dt.getDate(), cnt: cnt, acc: cnt ? Math.round(cc / cnt * 100) : 0 });
-    }
-    var wh = "";
-    for(var q2 = 0; q2 < series.length; q2++){
-      var it = series[q2];
-      var hgt = it.cnt ? Math.max(8, Math.round(it.cnt / maxN * 100)) : 3;
-      wh += '<div class="bar" role="listitem" tabindex="0" aria-label="' + it.label + "，练习 " + it.cnt + ' 题" title="' + it.label + "：" + it.cnt + " 题"
-          + (it.cnt ? "，正确率 " + it.acc + "%" : "") + '">'
-          + '<i style="height:' + hgt + "%" + (it.cnt ? "" : ";opacity:.22") + '"></i>'
-          + "<span>" + it.label + "</span></div>";
-    }
-    els.stTrend.innerHTML = wh;
+    function bucketRow(name, bucket){ return statRow(name, bucket.ok, bucket.n, bucket.n ? bucket.sec / bucket.n : null); }
+    els.stOps.innerHTML = opsOrder.map(function(op){ return bucketRow(op, stats.byOp[op]); }).join("");
+    els.stCarry.innerHTML = bucketRow("有进位", stats.byCarry[1]) + bucketRow("无进位", stats.byCarry[0]);
+    els.stTime.innerHTML = ["2 秒内", "2-5 秒", "5-10 秒", "10 秒以上"].map(function(label, i){ return distRow(label, stats.time[i], n); }).join("");
+    els.stTimeNote.textContent = n ? "答对平均 " + (good ? (stats.okSec / good).toFixed(1) : "—") + "s　|　答错平均 "
+      + (wrong ? (stats.badSec / wrong).toFixed(1) : "—") + "s"
+      + (wrong && good && stats.badSec / wrong > stats.okSec / good * 1.2 ? "　→ 错误题明显更慢，注意熟练度" : "") : "";
+    els.stLen.innerHTML = ["≤4 位", "5-8 位", "9-12 位", ">12 位"].map(function(label, i){ return bucketRow(label, stats.byLength[i]); }).join("");
+    var max = stats.series.reduce(function(best, day){ return Math.max(best, day.cnt); }, 1);
+    els.stTrend.innerHTML = stats.series.map(function(day){
+      var height = day.cnt ? Math.max(8, Math.round(day.cnt / max * 100)) : 3;
+      return '<div class="bar" role="listitem" tabindex="0" aria-label="' + day.label + "，练习 " + day.cnt
+        + ' 题" title="' + day.label + "：" + day.cnt + " 题" + (day.cnt ? "，正确率 " + day.acc + "%" : "")
+        + '"><i style="height:' + height + "%" + (day.cnt ? "" : ";opacity:.22") + '"></i><span>' + day.label + '</span></div>';
+    }).join("");
+    UI.lastStatsRender = stats;
   }
 
   /* ---------------- 设置 / 统计事件 ---------------- */
@@ -1349,13 +1059,13 @@
   els.stClear.addEventListener("click", function(){
     if(!S.records.length){ toast("还没有数据"); return; }
     var yes = !window.confirm || window.confirm("确定清空全部练习数据？此操作不可恢复。");
-    if(yes){ S.records = []; saveRecords(); renderStats(); toast("数据已清空"); }
+    if(yes){ S.records = []; persistence.recordsDirty = true; markStatsDirty(); saveRecords(); renderStats(); toast("数据已清空"); }
   });
 
   els.stExport.addEventListener("click", function(){
     if(!S.records.length){ toast("还没有数据"); return; }
-    var from = rangeStart();
-    var records = S.records.filter(function(r){ return r.t >= from; });
+    flushPersistence();
+    var records = getStats(S.stRange).records;
     if(!records.length){ toast("当前范围内还没有数据"); return; }
     var rows = [["时间", "算子", "A位数", "B位数", "进位", "是否正确", "用时(秒)"]];
     for(var i = 0; i < records.length; i++){
@@ -1377,6 +1087,10 @@
     setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
     toast("已导出当前范围的 " + records.length + " 条记录");
   });
+
+  document.addEventListener("visibilitychange", reconcileVisibility);
+  window.addEventListener("pagehide", flushPersistence);
+  els.setup.addEventListener("change", function(){ saveSettings(); });
 
   /* ---------------- 初始化 ---------------- */
   (function init(){

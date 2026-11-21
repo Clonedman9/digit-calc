@@ -8,15 +8,8 @@ const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const script=fs.readFileSync(path.join(root,'assets/app.js'),'utf8');
 const css=fs.readFileSync(path.join(root,'assets/app.css'),'utf8');
 
-function fn(name){
- const start=script.indexOf('function '+name+'('); assert.ok(start>=0,name);
- let depth=0,brace=script.indexOf('{',start);
- for(let i=brace;i<script.length;i++){
-  if(script[i]==='{')depth++;
-  if(script[i]==='}'&&--depth===0)return script.slice(start,i+1);
- }
- throw Error(name);
-}
+const Core=require('../assets/core.js');
+const {fn}=require('./helpers/app.cjs');
 function state(){return {ops:['+','−','×'],dg:Object.fromEntries(['+','−','×','÷'].map(op=>[op,{a:2,b:2}])),cnt:{'+':10,'−':10,'×':10,'÷':10},unlimited:false,limit:0,carry:0,divTol:0,showMs:0,adaptShow:false,adaptMin:100};}
 function settingsContext(raw){
  const ctx={S:state(),opsOrder:['+','−','×','÷'],localStorage:{getItem:()=>raw}};
@@ -27,6 +20,7 @@ function text(){return {textContent:''};}
 test('presentation assets are separate and all referenced DOM IDs exist exactly once',()=>{
  assert.match(html,/<link rel="stylesheet" href="assets\/app\.css">/);
  assert.match(html,/<script src="assets\/app\.js" defer><\/script>/);
+ assert.ok(html.indexOf('src="assets/core.js"')<html.indexOf('src="assets/app.js"'));
  const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(x=>x[1]);
  assert.equal(new Set(ids).size,ids.length);
  for(const [,id] of script.matchAll(/\$\("([^"]+)"\)/g))assert.ok(ids.includes(id),'Missing '+id);
@@ -80,20 +74,21 @@ test('corrupt or out-of-range preferences retain defaults and block malformed en
 });
 
 test('preference writes wait until hydration is complete and contain no session answers',()=>{
- const saved=[];const ctx={S:state(),UI:{ready:false},localStorage:{setItem:(key,value)=>saved.push([key,JSON.parse(value)])}};
+ const saved=[];const ctx={S:state(),UI:{ready:false},clearTimeout(){},persistence:{settingsTimer:null,settingsJSON:null},localStorage:{setItem:(key,value)=>saved.push([key,JSON.parse(value)])}};
  vm.createContext(ctx);vm.runInContext(fn('saveSettings'),ctx);ctx.saveSettings();assert.equal(saved.length,0);
  ctx.UI.ready=true;ctx.S.log=[{ans:'42'}];ctx.saveSettings();assert.equal(saved.length,1);
  assert.equal(saved[0][0],'drill.settings.v1');assert.equal(saved[0][1].log,undefined);
 });
 
 test('storage failures leave preference persistence non-fatal',()=>{
- const ctx={S:state(),UI:{ready:true},localStorage:{setItem(){throw Error('blocked');}}};
+ const ctx={S:state(),UI:{ready:true},clearTimeout(){},persistence:{settingsTimer:null,settingsJSON:null},localStorage:{setItem(){throw Error('blocked');}}};
  vm.createContext(ctx);vm.runInContext(fn('saveSettings'),ctx);assert.doesNotThrow(()=>ctx.saveSettings());
 });
 
 test('homepage metrics show genuine local records including today count',()=>{
  const UI={total:text(),accuracy:text(),average:text(),averageUnit:text(),today:text()};
- const ctx={UI,Date,S:{records:[{t:Date.now(),ok:1,sec:2},{t:Date.now(),ok:0,sec:4}]}};
+ const ctx={UI,Date,Core,S:{records:[{t:Date.now(),op:'+',la:2,lb:2,carry:0,ok:1,sec:2},{t:Date.now(),op:'+',la:2,lb:2,carry:0,ok:0,sec:4}]}};
+ ctx.getStats=()=>Core.aggregateRecords(ctx.S.records,0,Date.now());
  vm.createContext(ctx);vm.runInContext(fn('renderHomeStats'),ctx);ctx.renderHomeStats();
  assert.equal(UI.total.textContent,'2');assert.equal(UI.accuracy.textContent,'50%');
  assert.equal(UI.average.textContent,'3.0');assert.equal(UI.averageUnit.textContent,'秒');assert.equal(UI.today.textContent,'今天已练习 2 题');
