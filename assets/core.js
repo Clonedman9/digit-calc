@@ -267,6 +267,13 @@
       && diff * 10000n <= expected.numerator * user.denominator * basisPoints;
     return { valid: true, correct: approx, approx, raw };
   }
+  function nextAdaptiveShow(current, base, floor, correct) {
+    const cap = Math.min(60000, Math.max(base * 2, 3000));
+    const lower = Math.max(20, Math.min(floor, cap));
+    const value = Math.max(lower, Math.min(cap, current));
+    const next = Math.round(value * (correct ? 0.8 : 1.3) / 10) * 10;
+    return Math.max(lower, Math.min(cap, next));
+  }
   function nextInput(value, command) {
     if (command === 'back') return value.slice(0, -1);
     if (command === 'clear') return '';
@@ -356,6 +363,6 @@
   return Object.freeze({ OPS, MAX_DIGITS, RECORD_LIMIT, ANSWER_LIMIT, p10, randBetween, randBig,
     digitsOf, addCarry, subBorrow, mulCarry, carryInfo, isConfigValid, validateQueueOps,
     sampleDigitPair, genMul, tryDiv, tryDivDec, generateFor, generateQuestion, buildSchedule,
-    decimalFraction, gradeAnswer, nextInput, validRecord, sanitizeRecords, dayKey, rangeStart,
+    decimalFraction, gradeAnswer, nextAdaptiveShow, nextInput, validRecord, sanitizeRecords, dayKey, rangeStart,
     aggregateRecords, createRingBuffer, escapeHTML });
 });

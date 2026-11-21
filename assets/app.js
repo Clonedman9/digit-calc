@@ -297,6 +297,8 @@
     S.timeTotal = 0; S.timeCount = 0; S.fastest = Infinity;
     S.wrong = []; S.log = [];
     UI.reviewRows = []; UI.reviewCursor = 0;
+    els.reviewList.replaceChildren();
+    UI.reviewNote.hidden = true; UI.reviewNote.textContent = "";
     pendingPointerClicks.clear();
     S.reviewLimit = nextQueue ? Math.max(1, nextQueue.length) : Core.RECORD_LIMIT;
     S.reviewBuffer = Core.createRingBuffer(S.reviewLimit);
@@ -485,11 +487,7 @@
 
     // 自适应：答对缩短、答错延长（只影响下一题）
     if(adaptActive()){
-      var cap = Math.min(10000, Math.max(S.showMs * 2, 3000));
-      var floor = adaptFloor();                                   // 下限永远低于基准
-      var nx = correct ? S.curShow * 0.8 : S.curShow * 1.3;
-      nx = Math.round(nx / 10) * 10;
-      S.curShow = Math.max(floor, Math.min(cap, nx));
+      S.curShow = Core.nextAdaptiveShow(S.curShow, S.showMs, adaptFloor(), correct);
     }
 
     // 答题中不显示对错反馈，保持盲测；结算页统一回顾。
