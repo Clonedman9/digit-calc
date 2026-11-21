@@ -1,5 +1,7 @@
 name: Import frontend refresh
 on:
+  push:
+    branches: ['ui/quiet-workspace']
   workflow_dispatch:
 permissions:
   contents: write
