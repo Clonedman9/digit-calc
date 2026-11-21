@@ -2,15 +2,14 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
-const html=fs.readFileSync(require('node:path').join(__dirname,'../index.html'),'utf8');
-const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const script=fs.readFileSync(require('node:path').join(__dirname,'../assets/app.js'),'utf8');
 function fn(name){
  const start=script.indexOf('function '+name+'('); assert.ok(start>=0);
  let depth=0, end=script.indexOf('{',start);
  for(let i=end;i<script.length;i++) {if(script[i]==='{')depth++; if(script[i]==='}'&&--depth===0)return script.slice(start,i+1);}
  throw Error(name);
 }
-test('inline JavaScript syntax remains valid',()=>new vm.Script(script));
+test('application JavaScript syntax remains valid',()=>new vm.Script(script));
 test('integer division includes exactly divisible lower bound',()=>{
  const ctx={BigInt,Math,Number,rnd:()=>9,randBetween:lo=>lo,tryDivDec:()=>null};
  vm.createContext(ctx);vm.runInContext('var TEN=BigInt(10);'+fn('p10')+fn('tryDiv'),ctx);
