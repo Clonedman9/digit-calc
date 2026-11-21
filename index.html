@@ -702,7 +702,8 @@
       var rd = tryDivDec(dd, b);
       if(rd) return rd;
     }
-    var lo = p10(dd - 1) / b + BigInt(1);
+    var loA = p10(dd - 1);
+    var lo = (loA + b - BigInt(1)) / b; // 向上取整；整除边界也属于合法题目
     var hi = (p10(dd) - BigInt(1)) / b;
     if(strict && hi >= BigInt(2) && lo < BigInt(2)) lo = BigInt(2);
     if(hi < lo) return null;
@@ -1071,6 +1072,10 @@
 
   function submit(){
     if(S.locked) return;
+    // 后台标签页的 interval 可能被节流，提交时以真实经过时间判定截止。
+    if(S.limit > 0 && performance.now() - S.t0 >= S.limit * 1000){
+      resolve(false, null, true); return;
+    }
     var raw = els.answer.value.trim().replace(/[,\s]/g, "");
     if(raw === ""){ return; }
     if(!/^\d+(\.\d+)?$/.test(raw)){ return; }            // 整数或小数
@@ -1146,8 +1151,9 @@
     // 答题中不显示对错反馈，保持盲测；结算页统一回顾。
     els.qcard.classList.remove("good", "bad", "skip");
     els.qMark.textContent = "";
+    var resolvedQid = S.qid;
     setTimeout(function(){
-      if(!els.drill.classList.contains("active")) return;   // 已结束/退出则不再换题
+      if(resolvedQid !== S.qid || !els.drill.classList.contains("active")) return;   // 已结束/退出则不再换题
       S.i++;
       nextQuestion();
     }, 1);
@@ -1194,11 +1200,13 @@
 
   function finish(){
     stopTimer();
+    clearTimeout(S.hideTimer);
+    S.qid++; // 使旧题的隐藏/换题回调失效
     S.locked = true;
     var done = S.ok + S.bad;
     var acc = done ? Math.round(S.ok / done * 100) : 0;
     var avg = S.times.length ? S.times.reduce(function(x, y){ return x + y; }, 0) / S.times.length : null;
-    var fast = S.times.length ? Math.min.apply(null, S.times) : null;
+    var fast = S.times.length ? S.times.reduce(function(best, sec){ return Math.min(best, sec); }, Infinity) : null;
     var totalSec = (Date.now() - S.startAt) / 1000;
 
     els.scoreBig.textContent = acc + "%";
@@ -1435,7 +1443,8 @@
   // 物理键盘（桌面端）
   document.addEventListener("keydown", function(e){
     if(!els.drill.classList.contains("active")) return;
-    if(S.locked) return;
+    if(S.locked || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+    if(["Backspace", "Enter", "Escape", "."].indexOf(e.key) !== -1 || /^[0-9]$/.test(e.key)) e.preventDefault();
     if(e.key >= "0" && e.key <= "9"){
       if(els.answer.value.length < 24) els.answer.value += e.key;
     } else if(e.key === "Backspace"){
@@ -1462,7 +1471,17 @@
   function loadRecords(){
     try{
       var raw = localStorage.getItem("drill.records.v1");
-      S.records = raw ? (JSON.parse(raw) || []) : [];
+      var parsed = raw ? JSON.parse(raw) : [];
+      S.records = Array.isArray(parsed) ? parsed.filter(function(r){
+        return r && typeof r === "object"
+          && Number.isFinite(r.t) && r.t >= 0 && r.t <= 8640000000000000
+          && opsOrder.indexOf(r.op) !== -1
+          && Number.isInteger(r.la) && r.la >= 1 && r.la <= 6
+          && Number.isInteger(r.lb) && r.lb >= 1 && r.lb <= 6
+          && (r.ok === 0 || r.ok === 1)
+          && Number.isFinite(r.sec) && r.sec >= 0
+          && (r.carry === 0 || r.carry === 1);
+      }).slice(-2000) : [];
     }catch(e){ S.records = []; }
   }
 
