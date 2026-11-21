@@ -205,3 +205,13 @@ python3 -m http.server 8080
 ## License
 
 MIT
+
+## 回归测试
+
+使用 Node.js 22，无需安装依赖：
+
+```sh
+node --test tests/*.test.cjs
+```
+
+测试覆盖内联脚本语法、整除位数边界、提交截止时间、正常整数判分、历史数据校验和大样本结算。GitHub Actions 在 push / pull request 时自动运行。
