@@ -31,6 +31,6 @@ jobs:
           node scripts/build-standalone.cjs
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add index.html assets README.md tests scripts/build-standalone.cjs scripts/benchmark.cjs scripts/browser-benchmark.js .gitignore .github/workflows/test.yml
+          git add index.html assets README.md tests scripts/build-standalone.cjs scripts/benchmark.cjs scripts/browser-benchmark.js .gitignore
           git commit -m 'perf: optimize generation, analytics, persistence and bounded sessions'
           git push origin HEAD:perf/core-and-runtime
