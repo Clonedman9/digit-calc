@@ -52,3 +52,20 @@ test('composition, modifiers and locked runs are ignored', () => {
   f.S.locked = true; f.ctx.onDrillKeydown({ key: '1' });
   assert.equal(f.els.answer.value, '');
 });
+
+test('two touch pointers can enter left/right digits before either matching click arrives', () => {
+  const f = fixture(), left = f.key('1'), right = f.key('3');
+  f.ctx.onKeypadPointer(f.event(left, { pointerId: 11, pointerType: 'touch', isPrimary: true }));
+  f.ctx.onKeypadPointer(f.event(right, { pointerId: 12, pointerType: 'touch', isPrimary: false }));
+  assert.equal(f.els.answer.value, '13');
+  f.ctx.onKeypadClick(f.event(right)); f.ctx.onKeypadClick(f.event(left));
+  assert.equal(f.els.answer.value, '13'); assert.equal(f.pending.size, 0);
+});
+
+test('two fingers on the same number preserve two inputs while suppressing both paired clicks', () => {
+  const f = fixture(), middle = f.key('5');
+  f.ctx.onKeypadPointer(f.event(middle, { pointerId: 21, pointerType: 'touch', isPrimary: true }));
+  f.ctx.onKeypadPointer(f.event(middle, { pointerId: 22, pointerType: 'touch', isPrimary: false }));
+  f.ctx.onKeypadClick(f.event(middle)); f.ctx.onKeypadClick(f.event(middle));
+  assert.equal(f.els.answer.value, '55'); assert.equal(f.pending.size, 0);
+});
